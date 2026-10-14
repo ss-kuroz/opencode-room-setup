@@ -31,6 +31,17 @@ evidence, then continue ready work without creating another approval gate.
 
 - Give every moving write scope one owner. Run writable Peers in parallel
   only with verified, accepted inputs and separate write scopes.
+- Lead keeps framing, integration, verification, and acceptance. The hands-on
+  legwork of an authorized task — writing the code, running probes and
+  captures, editing the files — goes to a Peer; a task assigned to Lead is not
+  Lead's own workload by default. When Lead does an assignment itself, the
+  handoff says which part and why no Peer could take it.
+- Lead creates the Peer session it dispatches to, inside the target project's
+  existing workspace. On Paseo's tool bridge that means a `provider/model`
+  provider id (for example `opencode-peer/ollama-cloud/glm-5.3-flash`);
+  `create_agent` rejects a `background` key, so create the session with a short
+  prompt and then send its brief with `background: true` and
+  `notifyOnFinish: true`.
 - Agree on shared contracts before dispatch. Sequence changes to shared files
   or interfaces; use separate branches or worktrees when needed. Do not start
   blocked work merely to increase parallel activity. Continue each ready

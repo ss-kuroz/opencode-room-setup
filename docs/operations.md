@@ -28,6 +28,44 @@ interface changes are sequenced against agreed contracts. A Peer owns one
 bounded outcome and returns an immutable candidate or a concrete premise,
 dependency, or block signal.
 
+## Dispatch work to a Peer
+
+An authorized task is not Lead's own workload. Framing, the shared contract
+between the parts, integration, verification, and explicit acceptance stay with
+Lead; the hands-on legwork — code, probes, captures, file edits — goes to a
+Peer through the `opencode-peer` profile. Give each moving write scope one
+owner and stay out of that scope while its Peer owns it.
+
+Paseo's tool bridge constrains how that session gets created:
+
+```text
+create_agent(provider="opencode-peer/ollama-cloud/glm-5.3-flash",
+             workspaceId=<the project's existing workspace>,
+             settings={mode: build, thinking: low},
+             initialPrompt=<one short line>)
+send_agent_prompt(agentId=<returned id>, background=true,
+                  notifyOnFinish=true, prompt=<the full brief>)
+```
+
+- `provider` must be the `provider/model` form. A bare provider id
+  (`opencode-peer`) fails the daemon's validation, and the failure reaches the
+  caller only as `Paseo tool bridge returned HTTP 500` — see
+  [troubleshooting](troubleshooting.md#creating-an-agent-from-inside-a-room-agent-fails-with-http-500).
+- `create_agent` does not accept a `background` key, so the create call carries
+  a one-line prompt and the real brief follows as a background message. That
+  message's `notifyOnFinish` is what wakes the sender when the Peer finishes,
+  errors, or asks for permission.
+- Create inside the project's existing workspace. A top-level create with no
+  `workspaceId` opens a *new* workspace instead of adopting the project's
+  checkout.
+
+The brief stays self-contained (observable outcome, inputs and dependencies,
+write scope, invariants, acceptance evidence, reopen condition), and every
+actionable response gets closed with an answer, a resolved dependency or
+ownership question, a request for the specific missing evidence, or an explicit
+ACCEPT/REJECT with a reason. Silence, DONE, and passing tests are not a
+disposition.
+
 ## Supervision and attention
 
 Assign a new Supervisor a named project to begin monitoring. It first reads the

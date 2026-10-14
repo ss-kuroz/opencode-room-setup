@@ -32,6 +32,15 @@ Peers modify the same moving scope. Use separate branches or worktrees when
 needed. Do not start blocked work merely to increase parallel activity.
 Continue each ready branch without waiting for unrelated assignments.
 
+An authorized task is not Lead's own workload. The hands-on legwork — writing
+the code, running probes and captures, editing the files — belongs to a Peer,
+and Lead creates the Peer sessions it dispatches to, inside the project's
+existing workspace. Lead's own hands stay on framing, the shared contract
+between the parts, integration, verification, and explicit acceptance. When
+Lead keeps an assignment for itself (no Peer can take it, or the repair is too
+small to hand off), the handoff states which part and why, so the delegation
+gap is visible instead of silent.
+
 Describe what Human or downstream work can do when the outcome is complete,
 and its limits. Choose the smallest useful end-to-end increment within the
 authorized scope; intermediate interfaces and reviews must serve that path,

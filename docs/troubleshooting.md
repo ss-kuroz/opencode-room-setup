@@ -91,6 +91,34 @@ entirely for a model without thinking options. A role provider's catalog is
 exactly what `config/room.json` declares for it, so a model that exists on
 `opencode` is still unavailable on that seat until the spec lists it.
 
+## Creating an agent from inside a room agent fails with HTTP 500
+
+Symptom: a Lead (or a Supervisor) calls the Paseo `create_agent` tool and gets
+`Paseo tool bridge returned HTTP 500` back, with no other explanation. The
+bridge validates the tool call itself, so the real cause is in the daemon log:
+
+```bash
+tail -n 200 ~/.paseo/daemon.log | grep "OpenCode bridge request failed"
+```
+
+Two causes were seen on Paseo 0.11.2:
+
+- `provider must be provider/model, for example codex/gpt-5.4` — the call
+  passed a bare provider id. A room seat is a derived provider, so the id has
+  to carry its model explicitly: `opencode-peer/ollama-cloud/glm-5.3-flash`,
+  `opencode-lead/ollama-cloud/glm-5.3`,
+  `opencode-supervisor/ollama-cloud/deepseek-v4.1-flash`.
+- `Unrecognized key: "background"` — `create_agent`'s bridge schema has no
+  `background` field even though the tool description mentions one. Create the
+  session with a one-line `initialPrompt`, then send the real brief through
+  `send_agent_prompt` with `background: true` and `notifyOnFinish: true`; that
+  is also the call whose notification reports the Peer's finish, error, or
+  permission request.
+
+A top-level create without `workspaceId` also opens a new workspace rather than
+adopting the project's checkout, so pass the project's existing workspace id.
+The mechanics are in [operations](operations.md#dispatch-work-to-a-peer).
+
 ## Roll back a bad sync
 
 Every sync copies the previous config to `~/.opencode-room-backups/`. To

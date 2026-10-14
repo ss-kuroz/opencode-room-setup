@@ -80,6 +80,19 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   chạy lại `sync` là khôi phục.**
 - Session đang chạy không nhận prompt mới; profile chỉ có hiệu lực khi tạo
   agent mới.
+- **Tạo agent từ trong agent phải theo 2 luật của cầu Paseo** (đã dính thật,
+  2026-10-15): `provider` phải ở dạng `provider/model` — ví dụ
+  `opencode-peer/ollama-cloud/glm-5.3-flash`, truyền `opencode-peer` trần là
+  HTTP 500; và `create_agent` **không** nhận key `background`. Cách đúng: tạo
+  session với `initialPrompt` một dòng, rồi gửi brief thật bằng
+  `send_agent_prompt` kèm `background: true` + `notifyOnFinish: true`. Truyền
+  `workspaceId` của project, đừng để top-level create mở workspace mới. Chi
+  tiết ở `docs/troubleshooting.md`, cách giao việc ở `docs/operations.md`.
+- Việc chân tay của một task đã được giao thuộc về **Peer**, không phải
+  workload của Lead: Lead giữ framing, hợp đồng giữa các phần, integration,
+  kiểm chứng và accept/reject. Luật này nằm ở `roles/lead.md` và mục
+  "Ownership and dispatch" của `workflow/WORKSPACE_PROTOCOL.md` — sửa ở đó nếu
+  muốn đổi, đừng nhắc lại bằng lời trong từng phiên.
 - Không sửa tay các mục room trong `~/.paseo/config.json` — regenerated.
 - Backup mọi lần sync nằm ở `~/.opencode-room-backups/`.
 - File tiếng Việt/markdown phải UTF-8 không BOM, line ending LF.
