@@ -8,21 +8,34 @@ hợp để hoàn thành một outcome kỹ thuật.
 
 ```text
 Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
+    -> agents.providers "opencode-supervisor | opencode-lead | opencode-peer"
+         mỗi vai trò là một provider dẫn xuất ("extends": "opencode", label riêng),
+         catalog model của nó chỉ gồm model của vai trò đó, và thinking effort của
+         vai trò được đánh dấu là default ở cấp provider
     -> daemon.agentProfiles "opencode-supervisor | opencode-lead | opencode-peer"
-         provider opencode (built-in của Paseo), mode build, auto_accept
+         mỗi vai trò một profile, trỏ vào provider dẫn xuất tương ứng: mode build,
+         auto_accept, và prompt vai trò lấy từ roles/<role>.md
     -> opencode (ACP server có sẵn trong OpenCode CLI, không cần adapter)
     -> model Ollama Cloud resolve qua OpenCode: minimax-m3 / glm-5.3 /
        glm-5.3-flash, kèm thinking effort medium / high / low
     -> hợp đồng chung: ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
-Repo không cài Paseo, OpenCode, hay Ollama. Nó chỉ sở hữu ba thứ: mục provider
-`opencode` trong `~/.paseo/config.json` (sync ghim `enabled: true` và
-`command` override trỏ vào exe thật) và ba agent profile, file hợp đồng chung
-ở `~/.config/opencode-room/workflow/`, và backup config ở
+Repo không cài Paseo, OpenCode, hay Ollama. Nó chỉ sở hữu ba thứ: các mục
+provider trong `~/.paseo/config.json` (provider gốc `opencode` mà sync ghim
+`enabled: true` và `command` override trỏ vào exe thật, cộng ba provider dẫn
+xuất cho ba vai trò) và ba agent profile, file hợp đồng chung ở
+`~/.config/opencode-room/workflow/`, và backup config ở
 `~/.opencode-room-backups/`. Toàn bộ phần còn lại của `~/.paseo/config.json`
-(listen, plugins, provider khác, profile khác — kể cả room Amp `amp-*`) được
-giữ nguyên, không đụng tới.
+(listen, plugins, provider khác, profile khác) được giữ nguyên, không đụng tới.
+
+Phòng được công bố thành hai tầng vì Paseo tách hai việc: **provider** giữ thứ
+người vận hành chọn trước khi đặt tên cho agent (model, và thinking effort của
+model đó), còn **agent profile** là tầng duy nhất có `notes` — nơi chứa prompt
+vai trò — cùng `modeId` và `auto_accept`. Provider không mang được prompt hay
+auto-accept, nên ba provider dẫn xuất không thay thế profile; cả hai tầng mới là
+phòng. Nhờ tầng provider, danh sách provider của Paseo có `OpenCode - Supervisor
+/ Lead / Peer`, mỗi mục đã mặc định sẵn model và thinking effort của vai trò.
 
 ## Ranh giới trách nhiệm
 
@@ -87,12 +100,16 @@ Không lặp lại truy vấn khi state chưa đổi.
 ## Sửa ở đâu?
 
 - Đổi prompt hoặc authority của role: sửa `roles/<role>.md`.
-- Đổi model, thinking effort, mode, auto-accept, tên profile: sửa
-  `config/room.json`.
-- Đổi provider: sửa `config/room.json` (mục `provider`). Với provider
+- Đổi model, thinking effort, mode, auto-accept, tên profile, và provider dẫn
+  xuất của vai trò (id, label, catalog model): sửa `config/room.json`. Mảng
+  `models` của provider dẫn xuất **thay thế** catalog mà Paseo dò được từ
+  OpenCode, nên phải liệt kê đủ mọi model và thinking option mà ghế đó được
+  phép dùng; model và `providerId` của profile phải khớp với nhau.
+- Đổi provider gốc: sửa `config/room.json` (mục `provider`). Với provider
   built-in `opencode`, sync quản lý 2 key trong entry — `enabled` và
   `command` override trỏ vào exe thật (xem gotcha về npm shim trong
-  AGENTS.md); các key khác trong entry được giữ nguyên.
+  AGENTS.md); các key khác trong entry được giữ nguyên. Ba provider dẫn xuất
+  kế thừa launch này nên đường dẫn exe chỉ được ghi ở một chỗ.
 - Đổi nguyên tắc phối hợp chung: sửa `workflow/WORKSPACE_PROTOCOL.md`.
 - Đổi logic merge/render: sửa `scripts/room.py` và test boundary tương ứng
   trong `tests/test_room.py`.

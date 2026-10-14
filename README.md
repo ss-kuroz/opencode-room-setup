@@ -5,8 +5,13 @@ Lead, Peer) running through an **operator-installed** Paseo daemon:
 
 ```text
 Paseo daemon (installed on the machine, ~/.paseo/config.json)
+  -> agents.providers "opencode-supervisor | opencode-lead | opencode-peer"
+       one derived provider per role ("extends": "opencode", own label) whose
+       model catalog is exactly the role's model, with the role's thinking
+       effort marked as the provider-level default
   -> daemon.agentProfiles "opencode-supervisor | opencode-lead | opencode-peer"
-       provider opencode (Paseo built-in), mode build, auto_accept
+       one profile per role, bound to that role's derived provider: mode build,
+       auto_accept, and the role prompt from roles/<role>.md
   -> opencode (ACP server built into the OpenCode CLI)
   -> Ollama Cloud models resolved by OpenCode: minimax-m3 / glm-5.3 /
        glm-5.3-flash, with thinking effort medium / high / low
@@ -19,22 +24,36 @@ idempotently:
 
 | Repository source | Local destination |
 | --- | --- |
-| `config/room.json` + `roles/*.md` | `~/.paseo/config.json` → provider entry `opencode` and the three `daemon.agentProfiles` entries |
+| `config/room.json` + `roles/*.md` | `~/.paseo/config.json` → the three derived entries in `agents.providers` and the three `daemon.agentProfiles` entries |
 | `workflow/WORKSPACE_PROTOCOL.md` | `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md` |
 | (backup of every config it rewrites) | `~/.opencode-room-backups/` |
 
-Everything else in `~/.paseo/config.json` — daemon settings, other providers,
-other agent profiles (including the Amp room's `amp-*` profiles), plugins — is
-preserved untouched. Sync never restarts the daemon; it asks a running daemon
-to `reload` its config.
+The room is published in two Paseo layers because Paseo splits the two jobs. A
+**provider** entry carries what an operator picks before naming an agent — the
+model, and the thinking effort behind that model — while an **agent profile**
+(the only layer with a `notes` prompt) carries the role instructions, `build`
+mode, and auto-accept. Providers cannot hold a role prompt or an auto-accept
+flag, so the derived providers never replace the profiles; together they are
+the room. Because Paseo's provider list is fed by `agents.providers`, the three
+roles show up there as `OpenCode - Supervisor / Lead / Peer`, each suggesting
+its own model and thinking effort.
 
-The provider entry is pinned, not just created: `sync` keeps
+Everything else in `~/.paseo/config.json` — daemon settings, other providers,
+other agent profiles, plugins — is preserved untouched. Sync never restarts the
+daemon; it asks a running daemon to `reload` its config.
+
+The base provider entry is pinned, not just created: `sync` keeps
 `agents.providers.opencode.enabled` true and its `command` override pointed at
-the real OpenCode executable, resolved from the npm shim at sync time.
-Without that override Paseo resolves `opencode` on PATH to the npm
-`opencode.CMD` shim, which its daemon cannot spawn; it then silently falls
-back to the legacy OpenCode v1 integration and every agent fails with
-"Request is not supported by this version of OpenCode Server".
+the real OpenCode executable, resolved from the npm shim at sync time. The
+derived role providers inherit that pinned launch, so the executable path is
+owned in exactly one place. Without that override Paseo resolves `opencode` on
+PATH to the npm `opencode.CMD` shim, which its daemon cannot spawn; it then
+silently falls back to the legacy OpenCode v1 integration and every agent fails
+with "Request is not supported by this version of OpenCode Server".
+
+One cost of the provider layer: Paseo runs one OpenCode server per provider id,
+so the three role providers can hold up to three `opencode` server processes
+while agents are running, instead of one for the whole room.
 
 ## Prerequisites
 
@@ -65,9 +84,14 @@ them keep working.
 
 | Profile | Provider | Model (Ollama Cloud) | Thinking | Mode | Auto-accept |
 | --- | --- | --- | --- | --- | --- |
-| `opencode-supervisor` | `opencode` | `minimax-m3` | `medium` | `build` | yes |
-| `opencode-lead` | `opencode` | `glm-5.3` | `high` | `build` | yes |
-| `opencode-peer` | `opencode` | `glm-5.3-flash` | `low` | `build` | yes |
+| `opencode-supervisor` | `opencode-supervisor` | `minimax-m3` | `medium` | `build` | yes |
+| `opencode-lead` | `opencode-lead` | `glm-5.3` | `high` | `build` | yes |
+| `opencode-peer` | `opencode-peer` | `glm-5.3-flash` | `low` | `build` | yes |
+
+Each profile is bound to the derived provider of the same name, whose catalog
+offers that role's model with the role's thinking effort as the provider-level
+default (`isDefault` in `config/room.json`). `paseo provider ls` shows the three
+role providers next to the base `opencode` provider.
 
 Human retains product, cost, external-effect, and irreversible-risk decisions.
 Supervisor routes Human intent and bounded recovery. Lead owns technical
@@ -80,9 +104,12 @@ contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
 ## Where to edit
 
 - Role prompt or authority: `roles/<role>.md`.
-- Model, thinking effort, mode, auto-accept, or profile names:
-  `config/room.json`. Thinking options are per-model — list valid values with
-  `paseo provider models opencode` (e.g. `glm-5.3` has no `medium`).
+- Model, thinking effort, mode, auto-accept, profile names, and the derived
+  role providers (id, label, model catalog): `config/room.json`. Thinking
+  options are per-model — list valid values with
+  `paseo provider models opencode` (e.g. `glm-5.3` has no `medium`). A derived
+  provider's `models` array *replaces* that provider's discovered catalog, so
+  list every model and thinking option that role provider should offer.
 - Shared coordination rules: `workflow/WORKSPACE_PROTOCOL.md`.
 - Merge/render behavior: `scripts/room.py` and `tests/test_room.py`.
 

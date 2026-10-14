@@ -33,7 +33,7 @@ class RenderTest(unittest.TestCase):
         profiles = room.render_profiles(spec)
         self.assertEqual([p["name"] for p in profiles], [e["name"] for e in spec["agentProfiles"]])
         for profile, entry in zip(profiles, spec["agentProfiles"]):
-            self.assertEqual(profile["provider"], spec["providerId"])
+            self.assertEqual(profile["provider"], entry["providerId"])
             self.assertEqual(profile["model"], entry["model"])
             self.assertEqual(profile["thinkingOptionId"], entry["thinkingOptionId"])
             self.assertEqual(profile["modeId"], entry["modeId"])
@@ -41,12 +41,84 @@ class RenderTest(unittest.TestCase):
             self.assertTrue(profile["notes"].strip())
             self.assertIn("~/.config/opencode-room/", profile["notes"])
 
+    def test_every_profile_provider_is_declared(self):
+        spec = load_spec()
+        declared = {p["id"] for p in spec["providers"]}
+        for entry in spec["agentProfiles"]:
+            self.assertIn(entry["providerId"], declared)
+
+    def test_renders_one_derived_provider_per_spec_entry(self):
+        spec = load_spec()
+        rendered = room.render_providers(spec)
+        self.assertEqual(
+            list(rendered), [p["id"] for p in spec["providers"]]
+        )
+        for entry in spec["providers"]:
+            provider = rendered[entry["id"]]
+            self.assertEqual(provider["extends"], spec["providerId"])
+            self.assertEqual(provider["label"], entry["label"])
+            self.assertEqual(provider["models"], entry["models"])
+            self.assertNotIn("command", provider)
+
+    def test_derived_provider_models_are_detached_from_the_spec(self):
+        spec = load_spec()
+        rendered = room.render_providers(spec)
+        rendered[spec["providers"][0]["id"]]["models"][0]["label"] = "mutated"
+        self.assertEqual(spec["providers"][0]["models"][0]["label"], "MiniMax M3")
+
     def test_render_omits_thinking_option_when_spec_lacks_it(self):
         spec = load_spec()
         for entry in spec["agentProfiles"]:
             entry.pop("thinkingOptionId", None)
         for profile in room.render_profiles(spec):
             self.assertNotIn("thinkingOptionId", profile)
+
+
+class SpecValidationTest(unittest.TestCase):
+    def test_shipped_spec_is_valid(self):
+        self.assertEqual(room.validate_spec(load_spec()), [])
+
+    def test_rejects_provider_ids_paseo_cannot_derive(self):
+        for bad in ("opencode", "OpenCode-Lead", "opencode_lead", "9lead"):
+            spec = load_spec()
+            spec["providers"][0]["id"] = bad
+            self.assertTrue(room.validate_spec(spec), bad)
+
+    def test_rejects_duplicate_provider_ids(self):
+        spec = load_spec()
+        spec["providers"][1]["id"] = spec["providers"][0]["id"]
+        self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_missing_label_or_empty_models(self):
+        spec = load_spec()
+        spec["providers"][0]["label"] = "  "
+        self.assertNotEqual(room.validate_spec(spec), [])
+        spec = load_spec()
+        spec["providers"][0]["models"] = []
+        self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_two_defaults_in_one_catalog(self):
+        spec = load_spec()
+        models = spec["providers"][0]["models"]
+        models.append(dict(models[0], id="ollama-cloud/other"))
+        self.assertNotEqual(room.validate_spec(spec), [])
+        spec = load_spec()
+        for option in spec["providers"][0]["models"][0]["thinkingOptions"]:
+            option["isDefault"] = True
+        self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_profile_naming_an_undeclared_provider(self):
+        spec = load_spec()
+        spec["agentProfiles"][0]["providerId"] = "opencode-ghost"
+        self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_duplicate_profile_names_and_roles(self):
+        spec = load_spec()
+        spec["agentProfiles"][1]["name"] = spec["agentProfiles"][0]["name"]
+        self.assertNotEqual(room.validate_spec(spec), [])
+        spec = load_spec()
+        spec["agentProfiles"][1]["role"] = spec["agentProfiles"][0]["role"]
+        self.assertNotEqual(room.validate_spec(spec), [])
 
 
 class ResolveBinaryTest(unittest.TestCase):
@@ -138,6 +210,75 @@ class ProviderMergeTest(unittest.TestCase):
         self.assertEqual(
             json.dumps(config["agents"]["providers"][spec["providerId"]], sort_keys=True), before
         )
+
+
+class DerivedProviderMergeTest(unittest.TestCase):
+    def test_creates_every_derived_entry(self):
+        spec = load_spec()
+        config = minimal_config()
+        changed = room.merge_providers(config, spec)
+        self.assertTrue(changed)
+        desired = room.render_providers(spec)
+        providers = config["agents"]["providers"]
+        self.assertEqual(list(providers), list(desired))
+        for provider_id, want in desired.items():
+            self.assertEqual(providers[provider_id], want)
+
+    def test_repairs_managed_keys_and_preserves_unrelated_ones(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        target = spec["providers"][0]["id"]
+        config["agents"]["providers"][target] = {
+            "label": "stale",
+            "enabled": False,
+            "env": {"X": "1"},
+        }
+        changed = room.merge_providers(config, spec)
+        self.assertTrue(changed)
+        entry = config["agents"]["providers"][target]
+        self.assertEqual(entry["label"], spec["providers"][0]["label"])
+        self.assertEqual(entry["extends"], spec["providerId"])
+        self.assertEqual(entry["env"], {"X": "1"})
+        self.assertIs(entry["enabled"], False)
+
+    def test_is_idempotent(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        room.merge_providers(config, spec)
+        before = json.dumps(config["agents"]["providers"], sort_keys=True)
+        self.assertFalse(room.merge_providers(config, spec))
+        self.assertEqual(json.dumps(config["agents"]["providers"], sort_keys=True), before)
+
+    def test_drops_managed_keys_the_spec_no_longer_carries(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        room.merge_providers(config, spec)
+        target = spec["providers"][0]["id"]
+        spec["providers"][0].pop("description")
+        self.assertTrue(room.merge_providers(config, spec))
+        self.assertNotIn("description", config["agents"]["providers"][target])
+
+    def test_rejects_non_object_providers(self):
+        config = {"agents": {"providers": []}}
+        with self.assertRaises(room.RoomError):
+            room.merge_providers(config, load_spec())
+
+    def test_removes_only_derived_providers(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        room.merge_providers(config, spec)
+        config["agents"]["providers"]["operator-provider"] = {
+            "extends": "acp",
+            "label": "Operator provider",
+            "command": ["whatever"],
+        }
+        changed = room.unmerge_providers(config, list(room.render_providers(spec)))
+        self.assertTrue(changed)
+        self.assertEqual(list(config["agents"]["providers"]), ["operator-provider"])
+
+    def test_unmerge_is_a_noop_when_nothing_managed(self):
+        config = minimal_config(provider=True)
+        self.assertFalse(room.unmerge_providers(config, ["opencode-lead"]))
 
 
 class ProfileMergeTest(unittest.TestCase):
@@ -270,6 +411,7 @@ class SyncFlowTest(unittest.TestCase):
         desired = room.render_profiles(spec)
         config = room.read_config(self.home)
         room.merge_provider(config, spec)
+        room.merge_providers(config, spec)
         room.merge_profiles(config, desired)
         room.write_config_atomic(self.paseo_home / "config.json", config)
         room.install_protocol(self.home)
@@ -280,6 +422,40 @@ class SyncFlowTest(unittest.TestCase):
         room.write_config_atomic(self.paseo_home / "config.json", config)
         problems = room.verify_installed(self.home, spec, desired)
         self.assertEqual(len(problems), 3)  # all three room profiles missing
+
+    def test_verify_reports_derived_provider_drift(self):
+        spec = load_spec()
+        desired = room.render_profiles(spec)
+        config = room.read_config(self.home)
+        room.merge_provider(config, spec)
+        room.merge_providers(config, spec)
+        room.merge_profiles(config, desired)
+        room.install_protocol(self.home)
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        config = room.read_config(self.home)
+        target = spec["providers"][0]["id"]
+        config["agents"]["providers"][target]["models"][0]["label"] = "drifted"
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        problems = room.verify_installed(self.home, spec, desired)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(target, problems[0])
+        self.assertIn("models", problems[0])
+
+    def test_uninstall_removes_both_layers(self):
+        spec = load_spec()
+        desired = room.render_profiles(spec)
+        config = room.read_config(self.home)
+        room.merge_provider(config, spec)
+        room.merge_providers(config, spec)
+        room.merge_profiles(config, desired)
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        room.install_protocol(self.home)
+        config = room.read_config(self.home)
+        self.assertTrue(room.unmerge_providers(config, list(room.render_providers(spec))))
+        self.assertTrue(room.unmerge_profiles(config, [e["name"] for e in spec["agentProfiles"]]))
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        problems = room.verify_installed(self.home, spec, desired)
+        self.assertEqual(len(problems), 6)  # 3 derived providers + 3 profiles missing
 
     def test_protocol_install_is_idempotent_and_removable(self):
         self.assertTrue(room.install_protocol(self.home))

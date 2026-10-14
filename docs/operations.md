@@ -2,12 +2,22 @@
 
 ## Change a role
 
-1. Edit `roles/<role>.md` (prompt/authority) or `config/room.json`
-   (model, thinking effort, mode, auto-accept, profile names).
+1. Edit `roles/<role>.md` (prompt/authority) or `config/room.json` (model,
+   thinking effort, mode, auto-accept, profile names, and the role's derived
+   provider: id, label, model catalog).
 2. Run `make test` and `python scripts/room.py verify --source`.
 3. Run `python scripts/room.py sync` and check the post-sync verification.
 4. Existing sessions keep their original instructions; create a new session
    with the profile to exercise the change.
+
+A role is two entries in `~/.paseo/config.json`: a derived provider
+(`extends: opencode`) that makes the seat visible in Paseo's provider list with
+its model and thinking effort as the default, and an agent profile that carries
+the role prompt, `build` mode, and auto-accept. Edit the profile's `providerId`
+and the provider's `models` array together when you change a role's model; a
+derived provider's `models` array replaces the catalog Paseo discovered from
+OpenCode, so it must list every model and thinking option that seat should
+offer.
 
 The three roles have distinct authority. Human keeps product, cost, external
 effect, and irreversible-risk decisions. Supervisor observes and routes Human
@@ -58,8 +68,8 @@ repeatedly query a seat while its state is unchanged.
 
 ## Restore drift
 
-The Paseo Desktop UI can edit or delete room profiles. `python scripts/room.py
-verify` reports exactly which field of which profile drifted;
-`python scripts/room.py sync` restores it without disturbing unrelated
-profiles or providers. Config backups from every sync live under
+The Paseo Desktop UI can edit or delete room profiles or derived role providers.
+`python scripts/room.py verify` reports exactly which field of which profile or
+provider drifted; `python scripts/room.py sync` restores it without disturbing
+unrelated profiles or providers. Config backups from every sync live under
 `~/.opencode-room-backups/`.

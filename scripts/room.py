@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """Manage the SLP OpenCode room (Supervisor / Lead / Peer) on an installed Paseo daemon.
 
-The room is three Paseo agent profiles backed by the built-in `opencode`
-provider: each profile pins an Ollama Cloud model and thinking effort resolved
-through OpenCode, `build` mode, auto-accept, and a role prompt rendered from
-roles/<role>.md. sync also pins the provider entry's `enabled` flag and its
+The room is published in two Paseo layers, because Paseo splits the two jobs:
+
+  * one derived provider per role (`opencode-supervisor`, `opencode-lead`,
+    `opencode-peer`), each declaring `extends: opencode` plus its own label and
+    model catalog. A provider entry carries the launch defaults an operator
+    picks before naming an agent: the model (a model marked `isDefault` is the
+    one Paseo suggests) and the thinking effort (a thinking option marked
+    `isDefault` becomes the model's `defaultThinkingOptionId`). Providers cannot
+    carry a role prompt or auto-accept, so they never replace the profiles.
+  * one agent profile per role, still named after the role, bound to that role's
+    derived provider. Profiles are Paseo's "named launch bundles": they carry the
+    role prompt rendered from roles/<role>.md, `build` mode, auto-accept, and the
+    pinned model + thinking effort.
+
+sync also pins the base `opencode` provider entry's `enabled` flag and its
 `command` override to the real OpenCode executable: npm installs put an
 `opencode.CMD` shim on PATH, Node refuses to spawn `.cmd` shims without a
 shell (EINVAL), and Paseo then silently falls back to its legacy OpenCode v1
-integration, which requests API paths OpenCode v2 servers do not serve.
-Paseo itself is operator-installed and is never built, patched, or restarted
-by this repository.
+integration, which requests API paths OpenCode v2 servers do not serve. Derived
+providers inherit that pinned launch, so the executable path is owned in one
+place. Paseo itself is operator-installed and is never built, patched, or
+restarted by this repository.
 
 Subcommands:
-  sync        upsert the provider entry and the three room profiles into the
-              Paseo config, install the shared workspace protocol, reload the
-              daemon.
+  sync        upsert the provider entry, the derived providers, and the three
+              room profiles into the Paseo config, install the shared workspace
+              protocol, reload the daemon.
   verify      read-only checks of the repo sources and the installed state.
   uninstall   remove exactly the artifacts sync manages.
 
@@ -47,6 +59,12 @@ PROFILE_ID_PREFIX = "agent_profile_"
 BACKUP_DIRNAME = ".opencode-room-backups"
 MANAGED_PROFILE_KEYS = ("provider", "model", "modeId", "thinkingOptionId", "featureValues", "notes")
 PROVIDER_MANAGED_KEYS = ("enabled", "command")
+# The whole derived entry is room-owned: it exists only because the spec declares it.
+DERIVED_PROVIDER_MANAGED_KEYS = ("extends", "label", "description", "models")
+# Paseo accepts a custom provider id only in this alphabet, and derives a custom
+# provider only when the id is not one of its built-in provider ids.
+PROVIDER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
+BUILTIN_PROVIDER_IDS = ("claude", "codex", "copilot", "opencode", "pi", "omp")
 LEGACY_STACK_PATTERN = re.compile(r"\b(?:codex|amp)\b", re.IGNORECASE)
 SHIM_TARGET_PATTERN = re.compile(r'"([^"\n]*node_modules[^"\n]*opencode\.exe)"')
 
@@ -88,7 +106,7 @@ def render_profiles(spec: dict) -> list[dict]:
         seen.add(role)
         profile = {
             "name": name,
-            "provider": spec["providerId"],
+            "provider": entry.get("providerId", spec["providerId"]),
             "model": entry["model"],
             "modeId": entry["modeId"],
             "featureValues": {"auto_accept": entry["autoAccept"]},
@@ -99,6 +117,137 @@ def render_profiles(spec: dict) -> list[dict]:
             profile["thinkingOptionId"] = entry["thinkingOptionId"]
         profiles.append(profile)
     return profiles
+
+
+def render_providers(spec: dict) -> dict[str, dict]:
+    """Build the desired `agents.providers` entries for the derived role providers.
+
+    Paseo derives a provider from another provider when the entry declares
+    `extends`; only a provider extending the bare `acp` protocol may pin its own
+    `command`, so a derived provider inherits the base entry's launch — the one
+    place where sync pins the real OpenCode executable. `models` replaces that
+    provider's discovered catalog, so each role provider offers exactly the
+    role's model, with the role's thinking effort marked as its default.
+    """
+    providers: dict[str, dict] = {}
+    for entry in spec.get("providers", []):
+        provider = {
+            "extends": spec["providerId"],
+            "label": entry["label"],
+            "models": json.loads(json.dumps(entry["models"])),
+        }
+        if entry.get("description"):
+            provider["description"] = entry["description"]
+        providers[entry["id"]] = provider
+    return providers
+
+
+def validate_spec(spec: dict) -> list[str]:
+    """Return the structural problems that make a spec unpublishable.
+
+    Paseo accepts a role provider only if its id is one it can derive, and a
+    profile only launches if it names a provider that exists, so a malformed
+    spec must fail before sync writes anything.
+    """
+    problems: list[str] = []
+    base_provider_id = spec.get("providerId")
+    if not isinstance(base_provider_id, str) or not base_provider_id.strip():
+        problems.append("spec is missing a non-empty providerId")
+        base_provider_id = ""
+    derived = spec.get("providers", [])
+    if not isinstance(derived, list):
+        problems.append("spec providers must be a list")
+        derived = []
+    declared: set[str] = set()
+    for index, entry in enumerate(derived):
+        where = f"providers[{index}]"
+        if not isinstance(entry, dict):
+            problems.append(f"{where} must be an object")
+            continue
+        entry_id = entry.get("id")
+        if not isinstance(entry_id, str) or not PROVIDER_ID_PATTERN.match(entry_id):
+            problems.append(
+                f"{where}.id must match {PROVIDER_ID_PATTERN.pattern}, got {entry_id!r}"
+            )
+        elif entry_id in BUILTIN_PROVIDER_IDS or entry_id == base_provider_id:
+            problems.append(f"{where}.id {entry_id!r} is not a derivable provider id")
+        elif entry_id in declared:
+            problems.append(f"{where}.id {entry_id!r} is declared more than once")
+        else:
+            declared.add(entry_id)
+        if not str(entry.get("label", "")).strip():
+            problems.append(f"{where}.label must be a non-empty string")
+        problems.extend(validate_models(entry.get("models"), where))
+    seen_roles: set[str] = set()
+    seen_names: set[str] = set()
+    for index, entry in enumerate(spec.get("agentProfiles", [])):
+        where = f"agentProfiles[{index}]"
+        if not isinstance(entry, dict):
+            problems.append(f"{where} must be an object")
+            continue
+        name = entry.get("name")
+        role = entry.get("role")
+        if not str(name or "").strip():
+            problems.append(f"{where}.name must be a non-empty string")
+        elif name in seen_names:
+            problems.append(f"{where}.name {name!r} is declared more than once")
+        else:
+            seen_names.add(name)
+        if not str(role or "").strip():
+            problems.append(f"{where}.role must be a non-empty string")
+        elif role in seen_roles:
+            problems.append(f"{where}.role {role!r} is declared more than once")
+        else:
+            seen_roles.add(role)
+        provider = entry.get("providerId", base_provider_id)
+        if provider not in declared and provider != base_provider_id:
+            problems.append(f"{where}.providerId {provider!r} is not a declared provider")
+    return problems
+
+
+def validate_models(models: object, where: str) -> list[str]:
+    """Check one derived provider's `models` array against Paseo's schema."""
+    if not isinstance(models, list) or not models:
+        return [f"{where}.models must be a non-empty list"]
+    problems: list[str] = []
+    for index, model in enumerate(models):
+        at = f"{where}.models[{index}]"
+        if not isinstance(model, dict):
+            problems.append(f"{at} must be an object")
+            continue
+        if not str(model.get("id", "")).strip():
+            problems.append(f"{at}.id must be a non-empty string")
+        if not str(model.get("label", "")).strip():
+            problems.append(f"{at}.label must be a non-empty string")
+        problems.extend(
+            validate_thinking_options(model.get("thinkingOptions"), at, set_default_ok=True)
+        )
+    defaults = [m for m in models if isinstance(m, dict) and m.get("isDefault") is True]
+    if len(defaults) > 1:
+        problems.append(f"{where}.models marks more than one model as default")
+    return problems
+
+
+def validate_thinking_options(options: object, where: str, set_default_ok: bool = False) -> list[str]:
+    """Check one model's `thinkingOptions` array against Paseo's schema."""
+    if options is None:
+        return []
+    if not isinstance(options, list) or not options:
+        return [f"{where}.thinkingOptions must be a non-empty list when present"]
+    problems: list[str] = []
+    for index, option in enumerate(options):
+        at = f"{where}.thinkingOptions[{index}]"
+        if not isinstance(option, dict):
+            problems.append(f"{at} must be an object")
+            continue
+        if not str(option.get("id", "")).strip():
+            problems.append(f"{at}.id must be a non-empty string")
+        if not str(option.get("label", "")).strip():
+            problems.append(f"{at}.label must be a non-empty string")
+    defaults = [o for o in options if isinstance(o, dict) and o.get("isDefault") is True]
+    if len(defaults) > 1:
+        problems.append(f"{where}.thinkingOptions marks more than one option as default")
+    return problems
 
 
 def generate_profile_id() -> str:
@@ -181,6 +330,49 @@ def merge_provider(config: dict, spec: dict) -> bool:
     current.clear()
     current.update(merged)
     return True
+
+
+def merge_providers(config: dict, spec: dict) -> bool:
+    """Upsert the derived role providers; preserve every other provider entry.
+
+    Each derived entry is wholly owned by the spec, so a managed key the desired
+    entry does not carry is dropped. Unrelated keys an operator added by hand
+    (for example `enabled` or `env`) survive.
+    """
+    providers = config.setdefault("agents", {}).setdefault("providers", {})
+    if not isinstance(providers, dict):
+        raise RoomError("agents.providers in the Paseo config is not an object")
+    changed = False
+    for provider_id, want in render_providers(spec).items():
+        current = providers.get(provider_id)
+        if current is None:
+            providers[provider_id] = want
+            changed = True
+            continue
+        if not isinstance(current, dict):
+            raise RoomError(f"agents.providers.{provider_id} in the Paseo config is not an object")
+        merged = dict(current)
+        merged.update(want)
+        for key in DERIVED_PROVIDER_MANAGED_KEYS:
+            if key not in want:
+                merged.pop(key, None)
+        if merged != current:
+            current.clear()
+            current.update(merged)
+            changed = True
+    return changed
+
+
+def unmerge_providers(config: dict, provider_ids: list[str]) -> bool:
+    """Remove exactly the derived providers the spec declares."""
+    providers = config.get("agents", {}).get("providers", {})
+    if not isinstance(providers, dict):
+        return False
+    removed = False
+    for provider_id in provider_ids:
+        if providers.pop(provider_id, None) is not None:
+            removed = True
+    return removed
 
 
 def merge_profiles(config: dict, desired: list[dict]) -> bool:
@@ -311,6 +503,7 @@ def daemon_reload(home: Path) -> str:
 def verify_sources() -> list[str]:
     problems: list[str] = []
     spec = load_spec()
+    problems.extend(validate_spec(spec))
     roles = sorted(p.stem for p in ROLES_DIR.glob("*.md"))
     wanted = sorted(entry["role"] for entry in spec["agentProfiles"])
     if roles != wanted:
@@ -340,6 +533,9 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
     problems: list[str] = []
     config = read_config(home)
     providers = config.get("agents", {}).get("providers", {})
+    if not isinstance(providers, dict):
+        problems.append("agents.providers in the Paseo config is not an object")
+        providers = {}
     provider_id = spec["providerId"]
     try:
         desired_provider = desired_provider_entry(spec)
@@ -355,6 +551,17 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
         for key in PROVIDER_MANAGED_KEYS:
             if current_provider.get(key) != desired_provider.get(key):
                 problems.append(f"provider '{provider_id}' differs on '{key}'; run sync")
+    for derived_id, want in render_providers(spec).items():
+        current = providers.get(derived_id)
+        if current is None:
+            problems.append(f"derived provider '{derived_id}' missing from ~/.paseo/config.json; run sync")
+            continue
+        if not isinstance(current, dict):
+            problems.append(f"agents.providers.{derived_id} in the Paseo config is not an object")
+            continue
+        for key in DERIVED_PROVIDER_MANAGED_KEYS:
+            if current.get(key) != want.get(key):
+                problems.append(f"derived provider '{derived_id}' differs on '{key}'; run sync")
     existing = {
         p.get("name"): p
         for p in config.get("daemon", {}).get("agentProfiles", [])
@@ -381,12 +588,17 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
 def cmd_sync(args: argparse.Namespace) -> int:
     home = args.home
     spec = load_spec()
+    problems = validate_spec(spec)
+    if problems:
+        raise RoomError("invalid room spec:\n  - " + "\n  - ".join(problems))
     desired = render_profiles(spec)
+    derived = render_providers(spec)
     config = read_config(home)
     provider_added = merge_provider(config, spec)
+    providers_changed = merge_providers(config, spec)
     profiles_changed = merge_profiles(config, desired)
     protocol_changed = install_protocol(home)
-    if not (provider_added or profiles_changed or protocol_changed):
+    if not (provider_added or providers_changed or profiles_changed or protocol_changed):
         print("already in sync; nothing to do")
         reload_note = daemon_reload(home)
         if reload_note:
@@ -398,6 +610,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if backup:
         print(f"backup: {backup}")
     print(f"provider '{spec['providerId']}': {'created or repaired' if provider_added else 'present (unchanged)'}")
+    print(f"derived providers ({len(derived)}): {'updated' if providers_changed else 'present (unchanged)'}")
     print(f"agent profiles: {'updated' if profiles_changed else 'present (unchanged)'}")
     print(f"shared protocol: {'installed' if protocol_changed else 'present (unchanged)'}")
     reload_note = daemon_reload(home)
@@ -439,16 +652,21 @@ def cmd_verify(args: argparse.Namespace) -> int:
 def cmd_uninstall(args: argparse.Namespace) -> int:
     home = args.home
     spec = load_spec()
+    problems = validate_spec(spec)
+    if problems:
+        raise RoomError("invalid room spec:\n  - " + "\n  - ".join(problems))
     names = [entry["name"] for entry in spec["agentProfiles"]]
+    derived_ids = list(render_providers(spec))
     config = read_config(home)
     profiles_removed = unmerge_profiles(config, names)
+    derived_removed = unmerge_providers(config, derived_ids)
     provider_removed = False
     if args.purge_provider:
         providers = config.get("agents", {}).get("providers", {})
         if providers.pop(spec["providerId"], None) is not None:
             provider_removed = True
     protocol_removed = remove_protocol(home)
-    if not (profiles_removed or provider_removed or protocol_removed):
+    if not (profiles_removed or derived_removed or provider_removed or protocol_removed):
         print("nothing managed by this room is installed")
         return 0
     backup = backup_config(home)
@@ -457,6 +675,8 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         print(f"backup: {backup}")
     if profiles_removed:
         print(f"removed agent profiles: {', '.join(names)}")
+    if derived_removed:
+        print(f"removed derived providers: {', '.join(derived_ids)}")
     if provider_removed:
         print(f"removed provider '{spec['providerId']}'")
     if protocol_removed:
@@ -484,7 +704,7 @@ def main(argv: list[str] | None = None) -> int:
     p_uninstall = sub.add_parser("uninstall", help="remove the artifacts managed by this room")
     p_uninstall.add_argument("--home", type=Path, default=default_home, help="operator home (default: ~)")
     p_uninstall.add_argument(
-        "--purge-provider", action="store_true", help="also remove the opencode provider entry"
+        "--purge-provider", action="store_true", help="also remove the base opencode provider entry"
     )
     p_uninstall.set_defaults(func=cmd_uninstall)
 

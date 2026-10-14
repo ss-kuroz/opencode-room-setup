@@ -6,11 +6,27 @@ Cause: the Paseo Desktop UI (or archiving its last agent) edited or deleted
 the agent profile. `sync` restores it:
 
 ```bash
-python scripts/room.py verify   # lists which profile/field drifted
+python scripts/room.py verify   # lists which profile/provider field drifted
 python scripts/room.py sync     # restores it, preserving profile ids
 ```
 
-## The daemon does not show the updated profiles
+## A role is missing from Paseo's provider list
+
+The three roles appear in the provider list as `OpenCode - Supervisor`,
+`OpenCode - Lead`, and `OpenCode - Peer`, because each is a derived entry in
+`agents.providers` (`"extends": "opencode"`). If one is gone or renamed:
+
+```bash
+paseo provider ls                       # expect the three role providers
+python scripts/room.py verify           # names the missing or drifted entry
+python scripts/room.py sync             # recreates it and reloads the daemon
+paseo provider diagnostic opencode-lead # Command source: override, Status: Ready
+```
+
+Deleting a derived provider does not stop agents already running on it; it only
+removes the seat from the list for new agents.
+
+## The daemon does not show the updated profiles or providers
 
 `sync` asks a running daemon to reload; when the daemon is stopped the config
 still takes effect at the next start. Check state without changing anything:
@@ -18,6 +34,7 @@ still takes effect at the next start. Check state without changing anything:
 ```bash
 paseo daemon status
 paseo daemon config get daemon.agentProfiles
+paseo provider ls
 ```
 
 ## `error: Paseo config not found`
@@ -61,15 +78,18 @@ Credentials stay inside OpenCode; this repository never stores them.
 ## A model or thinking option is rejected
 
 Model and thinking ids drift with the OpenCode/Ollama catalog. List what the
-provider currently accepts, then align `config/room.json`:
+providers currently accept, then align `config/room.json`:
 
 ```bash
-paseo provider models opencode
+paseo provider models opencode            # the base provider's full catalog
+paseo provider models opencode-supervisor # a role provider: only its own models
 ```
 
 Thinking options are per-model (`minimax-m3` has `medium`; `glm-5.3` does
 not). A profile may also omit `thinkingOptionId` entirely for a model without
-thinking options.
+thinking options. A role provider's catalog is exactly what `config/room.json`
+declares for it, so a model that exists on `opencode` is still unavailable on
+that seat until the spec lists it.
 
 ## Roll back a bad sync
 

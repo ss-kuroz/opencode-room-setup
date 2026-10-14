@@ -11,20 +11,32 @@ Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế h
 
 ## Kiến trúc trong 1 câu
 
-`scripts/room.py sync` render 3 `daemon.agentProfiles`
-("opencode-supervisor" / "opencode-lead" / "opencode-peer": provider `opencode`
-built-in của Paseo, model Ollama Cloud `minimax-m3` / `glm-5.3` /
-`glm-5.3-flash` kèm thinking `medium` / `high` / `low`, mode `build`,
-`auto_accept`) từ `config/room.json` + `roles/*.md`, upsert theo tên vào
-`~/.paseo/config.json` (giữ nguyên id và mọi thứ khác), cài
-`workflow/WORKSPACE_PROTOCOL.md` tới
+`scripts/room.py sync` công bố phòng thành **hai tầng** trong
+`~/.paseo/config.json`: ba provider dẫn xuất `agents.providers`
+("opencode-supervisor" / "opencode-lead" / "opencode-peer", mỗi cái
+`extends: "opencode"` + label riêng + catalog model với model và thinking của
+vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (provider
+trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `minimax-m3` /
+`glm-5.3` / `glm-5.3-flash` kèm thinking `medium` / `high` / `low`, mode
+`build`, `auto_accept`, prompt từ `roles/*.md`), cộng mục provider gốc
+`opencode` (ghim `enabled: true` + `command` override vào exe thật, mà ba
+provider dẫn xuất kế thừa); upsert theo tên/id và giữ nguyên id cùng mọi thứ
+khác, cài `workflow/WORKSPACE_PROTOCOL.md` tới
 `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`, rồi gọi
 `paseo daemon reload` (không bao giờ restart daemon).
+
+Vì sao phải hai tầng: provider không mang được `notes` (prompt vai trò) hay
+`auto_accept`, còn profile thì không xuất hiện trong danh sách provider của
+Paseo. Provider cho "ghế" hiện ra kèm default model/thinking; profile giữ hợp
+đồng vai trò.
 
 ## Nguồn sự thật
 
 - Prompt 3 role: `roles/<role>.md` (được nhúng vào field `notes` của profile).
 - Model/thinking/mode/auto-accept/tên profile: `config/room.json`.
+- Provider dẫn xuất cho từng vai trò (id, label, catalog model): mục
+  `providers` trong `config/room.json`. `models` **thay thế** catalog Paseo dò
+  từ OpenCode, nên phải liệt kê đủ model + thinking option của ghế đó.
 - Hợp đồng phối hợp chung: `workflow/WORKSPACE_PROTOCOL.md`.
 - Logic merge: `scripts/room.py` (stdlib Python, fail loud, exit != 0 khi lỗi).
 

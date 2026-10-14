@@ -4,11 +4,15 @@
 
 ```text
 ~/.paseo/config.json                     (owned by the operator's Paseo install)
+  agents.providers[]                     (managed by scripts/room.py sync)
+    "opencode"            enabled + command override -> real opencode.exe
+    "opencode-supervisor"  extends opencode / minimax-m3    (default) / thinking medium (default)
+    "opencode-lead"        extends opencode / glm-5.3       (default) / thinking high   (default)
+    "opencode-peer"        extends opencode / glm-5.3-flash (default) / thinking low    (default)
   daemon.agentProfiles[]                 (managed by scripts/room.py sync)
-    "opencode-supervisor"  opencode / ollama-cloud/minimax-m3    / thinking medium / build / auto_accept
-    "opencode-lead"        opencode / ollama-cloud/glm-5.3       / thinking high   / build / auto_accept
-    "opencode-peer"        opencode / ollama-cloud/glm-5.3-flash  / thinking low    / build / auto_accept
-  agents.providers["opencode"]            (created as {"enabled": true} if absent, never modified)
+    "opencode-supervisor"  provider opencode-supervisor / minimax-m3    / thinking medium / build / auto_accept
+    "opencode-lead"        provider opencode-lead       / glm-5.3       / thinking high   / build / auto_accept
+    "opencode-peer"        provider opencode-peer       / glm-5.3-flash / thinking low    / build / auto_accept
       |
       v
 opencode (Paseo built-in provider -> OpenCode CLI ACP server)
@@ -22,14 +26,36 @@ opencode (Paseo built-in provider -> OpenCode CLI ACP server)
 There is no generated runtime. Paseo gives each agent its own session, and
 OpenCode owns its own state (auth, sessions, plugins under
 `~/.config/opencode` / `~/.local/share/opencode`). A role is fully described
-by its agent profile entry.
+by its derived provider entry plus its agent profile entry.
+
+## Why two layers
+
+Paseo keeps launch defaults and instructions in different places, and only one
+of them can hold the role prompt:
+
+| Layer | Carries | Cannot carry |
+| --- | --- | --- |
+| `agents.providers.<role>` | the provider the operator picks, its label, its model catalog, and the model's default thinking effort | a role prompt; an auto-accept flag; a default mode |
+| `daemon.agentProfiles.<role>` | the role prompt (`notes`), `modeId`, `auto_accept`, and the pinned model + thinking | — |
+
+So the derived provider exists to make the three seats visible and correctly
+defaulted in Paseo's provider list, and the profile exists because it is the
+only Paseo object that can carry `roles/<role>.md`. `modeId` is not settable on
+a provider at all: for `opencode` it selects an agent *inside* OpenCode, which
+the operator can rename or delete at will, so Paseo refuses to hardcode one.
+
+Paseo's rule for a derived provider (`extends` other than `acp`): the entry must
+declare `label`, it inherits the base provider's launch settings, and a
+non-empty `models` array replaces the catalog discovered from the provider.
+That is why the role providers never declare `command` themselves — the base
+`opencode` entry owns the resolved executable path.
 
 ## Ownership
 
 | Layer | Owner | Mutable state |
 | --- | --- | --- |
 | `~/.paseo` | Paseo (operator-installed) | Daemon, sessions, agents, projects, worktrees, identity |
-| `~/.paseo/config.json` room entries | `scripts/room.py sync` | Provider entry `opencode` + the three `daemon.agentProfiles` |
+| `~/.paseo/config.json` room entries | `scripts/room.py sync` | Provider entry `opencode`, the three derived role providers, and the three `daemon.agentProfiles` |
 | Rest of `~/.paseo/config.json` | Operator / Paseo Desktop | Never rewritten by this repository |
 | `~/.config/opencode-room/workflow/` | This repository | The shared `WORKSPACE_PROTOCOL.md` |
 | OpenCode CLI (`~/.config/opencode`, `~/.local/share/opencode`) | OpenCode | Ollama Cloud auth, sessions, plugins |
@@ -58,6 +84,13 @@ upserts them into `daemon.agentProfiles` **by name**:
   without the override Paseo falls back to its legacy v1 integration and
   every request returns the web UI's HTML page). Other keys in the entry are
   preserved.
+- The derived role providers are upserted by id the same way. Every key this
+  repository renders (`extends`, `label`, `description`, `models`) is
+  room-owned, so a key the spec no longer carries is removed; unrelated keys an
+  operator added by hand (`enabled`, `env`) survive. A derived provider id must
+  match Paseo's `^[a-z][a-z0-9-]*$` and must not be one of Paseo's built-in ids —
+  `verify --source` and `sync` both refuse a spec that breaks either rule, or
+  that binds a profile to a provider the spec never declares.
 - The previous config is copied to `~/.opencode-room-backups/` before each
   write, and the write itself is atomic (temp file + replace).
 - After writing, sync asks a running daemon to `reload`; it never restarts the
@@ -65,13 +98,17 @@ upserts them into `daemon.agentProfiles` **by name**:
 
 `verify` compares the installed state (config entries, installed protocol,
 `opencode` on PATH) against the rendered desired state and reports drift.
-`uninstall` removes exactly the three profiles by name, the installed protocol
-file, and (with `--purge-provider`) the provider entry — nothing else.
+`uninstall` removes exactly the three profiles by name, the three derived role
+providers, the installed protocol file, and (with `--purge-provider`) the base
+provider entry — nothing else.
 
 ## Failure modes
 
 - The Paseo Desktop UI can edit or delete agent profiles at any time. This is
   expected operator state, not corruption: re-run `sync` to restore the room.
+- The same applies to the derived role providers. Deleting one removes that
+  seat from Paseo's provider list (agents created from it keep running until
+  restarted); `verify` names the missing entry and `sync` restores it.
 - If the daemon is stopped, sync still writes the config and notes that the
   next daemon start will pick it up.
 - `sync` fails loudly when `~/.paseo/config.json` is missing or invalid JSON:
@@ -88,7 +125,9 @@ file, and (with `--purge-provider`) the provider entry — nothing else.
   repair the override.
 - Model and thinking ids can drift when the OpenCode/Ollama catalog changes.
   `paseo provider models opencode` lists what Paseo can currently see; update
-  `config/room.json` to match.
+  `config/room.json` to match. A derived role provider shows only the models and
+  thinking options the spec declares for it, so its catalog must list that
+  role's model explicitly (`paseo provider models opencode-supervisor`).
 
 ## Role boundaries
 
