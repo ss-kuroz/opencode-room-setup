@@ -1,0 +1,32 @@
+{
+  "providerId": "amp-acp",
+  "provider": {
+    "extends": "acp",
+    "label": "Amp",
+    "description": "ACP wrapper for Amp - the frontier coding agent",
+    "command": ["amp-acp"]
+  },
+  "agentProfiles": [
+    {
+      "name": "SLP - Supervisor",
+      "role": "supervisor",
+      "model": "medium",
+      "modeId": "local",
+      "autoAccept": true
+    },
+    {
+      "name": "SLP - Lead",
+      "role": "lead",
+      "model": "high",
+      "modeId": "local",
+      "autoAccept": true
+    },
+    {
+      "name": "SLP - Peer",
+      "role": "peer",
+      "model": "low",
+      "modeId": "local",
+      "autoAccept": true
+    }
+  ]
+}

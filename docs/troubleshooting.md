@@ -1,33 +1,55 @@
 # Troubleshooting
 
-## A role still uses an old model
+## A room profile disappeared from Paseo
 
-Cause: the overlay changed but the generated runtime was not refreshed.
-
-```bash
-scripts/sync-all <role>
-grep -E '^(model|model_reasoning_effort) =' "$HOME/.codex-runtime/<role>/config.toml"
-```
-
-## `codex-room-sync` cannot find a shared resource
-
-The operator's `~/.codex` is incomplete for this setup. Check the exact missing path reported by the script. This repository will not create or overwrite it.
-
-## Paseo does not show custom providers
-
-1. Validate `~/.paseo/config.json` with `jq`.
-2. Confirm its custom commands point to `~/.local/bin/codex-room`.
-3. Confirm `~/.local/bin` is on the daemon's PATH.
-4. Restart Paseo when no agent is running.
-5. Run `./install --verify`.
-
-## Daemon PID and listener disagree
-
-Compare the PID file with the actual listener:
+Cause: the Paseo Desktop UI (or archiving its last agent) edited or deleted
+the agent profile. `sync` restores it:
 
 ```bash
-cat "$HOME/.paseo/paseo.pid"
-lsof -nP -iTCP:6767 -sTCP:LISTEN
+python scripts/room.py verify   # lists which profile/field drifted
+python scripts/room.py sync     # restores it, preserving profile ids
 ```
 
-A wrapper PID and child Node PID can differ. Diagnose before deleting PID or state files.
+## The daemon does not show the updated profiles
+
+`sync` asks a running daemon to reload; when the daemon is stopped the config
+still takes effect at the next start. Check state without changing anything:
+
+```bash
+paseo daemon status
+paseo daemon config get daemon.agentProfiles
+```
+
+## `error: Paseo config not found`
+
+Paseo is not installed or not onboarded for this user. This repository never
+installs Paseo:
+
+```bash
+paseo onboard
+```
+
+## Agents fail with a provider error for `amp-acp`
+
+The ACP adapter or the Amp CLI is missing or logged out:
+
+```bash
+amp --version            # Amp CLI installed and authenticated
+amp-acp --version        # adapter on PATH (npm install -g amp-acp)
+```
+
+If `amp` is not on the daemon's PATH, set `AMP_CLI_PATH` in the provider's
+`env` in `~/.paseo/config.json`; an existing provider entry is never modified
+by `sync`, so this stays operator-owned.
+
+## Roll back a bad sync
+
+Every sync copies the previous config to `~/.amp-room-backups/`. To restore:
+
+```bash
+cp ~/.amp-room-backups/<stamp>.json ~/.paseo/config.json
+paseo daemon reload
+```
+
+or remove everything the room manages with
+`python scripts/room.py uninstall`.

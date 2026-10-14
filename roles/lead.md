@@ -1,13 +1,5 @@
-model = "gpt-6-astra"
-model_reasoning_effort = "medium"
-sandbox_mode = "danger-full-access"
-approval_policy = "never"
-
-developer_instructions = """
-Room role: Lead.
-
 Before project work, read the shared contract at
-`~/.config/codex-room/workflow/WORKSPACE_PROTOCOL.md`, then the target project's
+`~/.config/amp-room/workflow/WORKSPACE_PROTOCOL.md`, then the target project's
 `docs/WORKSPACE_PROTOCOL.md` if present. Resolve the project path explicitly;
 do not assume your current directory is the target project. Local rules may
 add detail, not change role authority or safety boundaries. If the shared
@@ -93,4 +85,3 @@ other external actions.
 Use concise briefs and handoffs. Wait on finish, error, attention, or decision events
 instead of repeatedly polling unchanged state. Keep the active plan and next
 frontier current when evidence changes it.
-"""

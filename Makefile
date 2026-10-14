@@ -1,28 +1,16 @@
-.PHONY: doctor test test-container verify install sync snapshots
+.PHONY: test sync verify uninstall
 
-doctor:
-	./scripts/doctor
+PYTHON ?= python3
 
 test:
-	python3 -m unittest discover -s tests -v
-	python3 -m py_compile scripts/install-room
-	@for script in scripts/* home/.local/bin/*; do \
-		[ -f "$$script" ] || continue; \
-		head -n 1 "$$script" | grep -Eq '(bash|zsh|sh)' || continue; \
-		bash -n "$$script" 2>/dev/null || zsh -n "$$script"; \
-	done
-
-test-container:
-	./tests/container/run
-
-verify:
-	./scripts/verify --source
-
-install:
-	./install --apply
+	$(PYTHON) -m unittest discover -s tests -v
+	$(PYTHON) -m py_compile scripts/room.py
 
 sync:
-	./scripts/sync-all
+	$(PYTHON) scripts/room.py sync
 
-snapshots:
-	./scripts/export-runtime-snapshots
+verify:
+	$(PYTHON) scripts/room.py verify --source
+
+uninstall:
+	$(PYTHON) scripts/room.py uninstall

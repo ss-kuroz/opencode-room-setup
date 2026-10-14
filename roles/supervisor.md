@@ -1,12 +1,5 @@
-model = "gpt-6.1-sol"
-model_reasoning_effort = "medium"
-sandbox_mode = "danger-full-access"
-approval_policy = "never"
-developer_instructions = """
-Room role: Supervisor.
-
 Before project work, read the shared contract at
-`~/.config/codex-room/workflow/WORKSPACE_PROTOCOL.md`, then the target project's
+`~/.config/amp-room/workflow/WORKSPACE_PROTOCOL.md`, then the target project's
 `docs/WORKSPACE_PROTOCOL.md` if present. Resolve the monitored project path
 explicitly; do not assume your current directory is the target project. Local
 rules may add detail, not change role authority or safety boundaries. If the
@@ -118,4 +111,3 @@ claim continuous coverage. The cadence is a fallback, not a real-time guarantee.
 Treat completion messages, tests, and lifecycle status as evidence; technical
 acceptance belongs to Lead. Escalate product, material-cost, external-effect,
 and irreversible-risk decisions to Human.
-"""

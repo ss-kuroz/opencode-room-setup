@@ -1,11 +1,11 @@
 # Workspace Protocol
 
-This is the small shared contract for a Codex Room workspace. Human
+This is the small shared contract for an Amp room workspace. Human
 instructions and owner decisions remain authoritative. A repository may add
 project-local detail, but cannot change role authority or safety boundaries.
 
 All roles read this shared contract from
-`~/.config/codex-room/workflow/WORKSPACE_PROTOCOL.md` before project work, then
+`~/.config/amp-room/workflow/WORKSPACE_PROTOCOL.md` before project work, then
 read `docs/WORKSPACE_PROTOCOL.md` relative to the actual target project when
 present. The local document supplements this contract. Report a missing or
 unreadable shared contract rather than silently assuming it was loaded.
@@ -43,7 +43,7 @@ evidence, then continue ready work without creating another approval gate.
 - A writable Peer returns an immutable candidate or deterministic snapshot,
   original base, complete changed paths, verification, and residual risk.
 - Preserve unrelated work and existing private notebooks, runtime/session
-  state, and operator-owned `.codex` bytes. The setup must not silently take
+  state, and operator-owned Amp bytes. The setup must not silently take
   ownership of them.
 
 ## Ready inputs and continuity
