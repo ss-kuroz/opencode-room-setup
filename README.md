@@ -5,7 +5,7 @@ Peer) running through an **operator-installed** Paseo daemon:
 
 ```text
 Paseo daemon (installed on the machine, ~/.paseo/config.json)
-  -> daemon.agentProfiles "SLP - Supervisor | Lead | Peer"
+  -> daemon.agentProfiles "amp-supervisor | amp-lead | amp-peer"
        provider amp-acp, mode local, auto_accept
   -> amp-acp (ACP adapter) -> Amp CLI (effort medium / high / low)
   -> shared contract at ~/.config/amp-room/workflow/WORKSPACE_PROTOCOL.md
@@ -51,9 +51,9 @@ them keep working.
 
 | Profile | Provider | Model (effort) | Mode | Auto-accept |
 | --- | --- | --- | --- | --- |
-| `SLP - Supervisor` | `amp-acp` | `medium` | `local` | yes |
-| `SLP - Lead` | `amp-acp` | `high` | `local` | yes |
-| `SLP - Peer` | `amp-acp` | `low` | `local` | yes |
+| `amp-supervisor` | `amp-acp` | `medium` | `local` | yes |
+| `amp-lead` | `amp-acp` | `high` | `local` | yes |
+| `amp-peer` | `amp-acp` | `low` | `local` | yes |
 
 Human retains product, cost, external-effect, and irreversible-risk decisions.
 Supervisor routes Human intent and bounded recovery. Lead owns technical

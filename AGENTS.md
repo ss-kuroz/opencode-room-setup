@@ -11,7 +11,7 @@ build Paseo từ source — tất cả đã bị xóa trong refactor Oct 2026.
 ## Kiến trúc trong 1 câu
 
 `scripts/room.py sync` render provider `amp-acp` + 3 `daemon.agentProfiles`
-("SLP - Supervisor" medium / "SLP - Lead" high / "SLP - Peer" low, mode
+("amp-supervisor" medium / "amp-lead" high / "amp-peer" low, mode
 `local`, `auto_accept`) từ `config/room.json` + `roles/*.md`, upsert theo tên
 vào `~/.paseo/config.json` (giữ nguyên id và mọi thứ khác), cài
 `workflow/WORKSPACE_PROTOCOL.md` tới

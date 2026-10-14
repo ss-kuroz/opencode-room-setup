@@ -86,13 +86,13 @@ class ProfileMergeTest(unittest.TestCase):
         config["daemon"]["agentProfiles"].append(other)
         desired = room.render_profiles(load_spec())
         room.merge_profiles(config, desired)
-        lead = next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "SLP - Lead")
+        lead = next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "amp-lead")
         # Change one desired note and re-merge: same id, same slot, unrelated profile kept.
         desired[1] = dict(desired[1], notes=desired[1]["notes"] + "\nUpdated.")
         changed = room.merge_profiles(config, desired)
         self.assertTrue(changed)
         self.assertEqual(
-            next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "SLP - Lead")["id"],
+            next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "amp-lead")["id"],
             lead["id"],
         )
         self.assertIn(other, config["daemon"]["agentProfiles"])
@@ -153,7 +153,7 @@ class UnmergeTest(unittest.TestCase):
 
     def test_noop_when_nothing_managed(self):
         config = minimal_config()
-        self.assertFalse(room.unmerge_profiles(config, ["SLP - Lead"]))
+        self.assertFalse(room.unmerge_profiles(config, ["amp-lead"]))
 
 
 class SyncFlowTest(unittest.TestCase):

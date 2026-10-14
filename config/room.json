@@ -8,21 +8,21 @@
   },
   "agentProfiles": [
     {
-      "name": "SLP - Supervisor",
+      "name": "amp-supervisor",
       "role": "supervisor",
       "model": "medium",
       "modeId": "local",
       "autoAccept": true
     },
     {
-      "name": "SLP - Lead",
+      "name": "amp-lead",
       "role": "lead",
       "model": "high",
       "modeId": "local",
       "autoAccept": true
     },
     {
-      "name": "SLP - Peer",
+      "name": "amp-peer",
       "role": "peer",
       "model": "low",
       "modeId": "local",

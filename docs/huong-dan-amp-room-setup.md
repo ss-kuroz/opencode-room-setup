@@ -8,7 +8,7 @@ hoàn thành một outcome kỹ thuật.
 
 ```text
 Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
-    -> daemon.agentProfiles "SLP - Supervisor | Lead | Peer"
+    -> daemon.agentProfiles "amp-supervisor | amp-lead | amp-peer"
          provider amp-acp, mode local, auto_accept
     -> amp-acp (adapter ACP) -> Amp CLI (effort medium / high / low)
     -> hợp đồng chung: ~/.config/amp-room/workflow/WORKSPACE_PROTOCOL.md

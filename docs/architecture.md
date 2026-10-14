@@ -5,9 +5,9 @@
 ```text
 ~/.paseo/config.json                     (owned by the operator's Paseo install)
   daemon.agentProfiles[]                 (managed by scripts/room.py sync)
-    "SLP - Supervisor"  amp-acp / medium / local / auto_accept
-    "SLP - Lead"        amp-acp / high   / local / auto_accept
-    "SLP - Peer"        amp-acp / low    / local / auto_accept
+    "amp-supervisor"  amp-acp / medium / local / auto_accept
+    "amp-lead"        amp-acp / high   / local / auto_accept
+    "amp-peer"        amp-acp / low    / local / auto_accept
   agents.providers["amp-acp"]            (created if absent, never modified)
       |
       v
