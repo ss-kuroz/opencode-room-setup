@@ -16,8 +16,8 @@ Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
          mỗi vai trò một profile, trỏ vào provider dẫn xuất tương ứng: mode build,
          auto_accept, và prompt vai trò lấy từ roles/<role>.md
     -> opencode (ACP server có sẵn trong OpenCode CLI, không cần adapter)
-    -> model Ollama Cloud resolve qua OpenCode: minimax-m3 / glm-5.3 /
-       glm-5.3-flash, kèm thinking effort medium / high / low
+    -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash / glm-5.3 /
+       glm-5.3-flash, kèm thinking effort high / high / low
     -> hợp đồng chung: ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
@@ -77,11 +77,12 @@ tên được giữ nguyên nên agent và schedule đang tham chiếu không b�
 `sync` không bao giờ restart daemon; nó chỉ gọi `paseo daemon reload` khi
 daemon đang chạy.
 
-Đổi model hoặc thinking effort: sửa `config/room.json`. Thinking là per-model —
-kiểm tra option hợp lệ bằng `paseo provider models opencode` (ví dụ
-`minimax-m3` có `medium`, còn `glm-5.3` chỉ có low/high/max). Model không có
-thinking option thì bỏ trường `thinkingOptionId`; sync sẽ xóa nó khỏi profile
-đã cài.
+Đổi model hoặc thinking effort: sửa `config/room.json` (cả mục `providers` của
+vai trò và `model`/`thinkingOptionId` của profile). Thinking là per-model — kiểm
+tra option hợp lệ bằng `paseo provider models opencode` (ví dụ
+`deepseek-v4.1-flash` chỉ có low/high/max, còn `glm-5.3` cũng chỉ có
+low/high/max). Model không có thinking option thì bỏ trường `thinkingOptionId`;
+sync sẽ xóa nó khỏi profile đã cài.
 
 ## Luồng một candidate
 

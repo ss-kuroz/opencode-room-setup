@@ -16,8 +16,8 @@ Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế h
 ("opencode-supervisor" / "opencode-lead" / "opencode-peer", mỗi cái
 `extends: "opencode"` + label riêng + catalog model với model và thinking của
 vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (provider
-trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `minimax-m3` /
-`glm-5.3` / `glm-5.3-flash` kèm thinking `medium` / `high` / `low`, mode
+trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash` /
+`glm-5.3` / `glm-5.3-flash` kèm thinking `high` / `high` / `low`, mode
 `build`, `auto_accept`, prompt từ `roles/*.md`), cộng mục provider gốc
 `opencode` (ghim `enabled: true` + `command` override vào exe thật, mà ba
 provider dẫn xuất kế thừa); upsert theo tên/id và giữ nguyên id cùng mọi thứ
@@ -65,7 +65,7 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   mất auth thì agent start lỗi — kiểm tra bằng
   `paseo provider diagnostic opencode`, đăng nhập lại bằng
   `opencode auth login`.
-- Thinking effort là per-model: `minimax-m3` có `medium`, còn `glm-5.3` chỉ có
+- Thinking effort là per-model: `deepseek-v4.1-flash` và `glm-5.3` chỉ có
   low/high/max — đổi model trong `config/room.json` thì kiểm tra lại thinking
   hợp lệ bằng `paseo provider models opencode`.
 - **Paseo Desktop UI có thể xóa/sửa agent profile** (đã từng xảy ra với room

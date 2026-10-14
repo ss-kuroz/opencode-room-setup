@@ -7,16 +7,15 @@
     {
       "id": "opencode-supervisor",
       "label": "OpenCode - Supervisor",
-      "description": "Supervisor seat on the OpenCode provider: MiniMax M3, thinking medium.",
+      "description": "Supervisor seat on the OpenCode provider: DeepSeek V4.1 Flash, thinking high.",
       "models": [
         {
-          "id": "ollama-cloud/minimax-m3",
-          "label": "MiniMax M3",
+          "id": "ollama-cloud/deepseek-v4.1-flash",
+          "label": "DeepSeek V4.1 Flash",
           "isDefault": true,
           "thinkingOptions": [
             { "id": "low", "label": "Low" },
-            { "id": "medium", "label": "Medium", "isDefault": true },
-            { "id": "high", "label": "High" },
+            { "id": "high", "label": "High", "isDefault": true },
             { "id": "max", "label": "Max" }
           ]
         }
@@ -62,8 +61,8 @@
       "name": "opencode-supervisor",
       "role": "supervisor",
       "providerId": "opencode-supervisor",
-      "model": "ollama-cloud/minimax-m3",
-      "thinkingOptionId": "medium",
+      "model": "ollama-cloud/deepseek-v4.1-flash",
+      "thinkingOptionId": "high",
       "modeId": "build",
       "autoAccept": true
     },

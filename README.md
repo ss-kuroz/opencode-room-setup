@@ -13,8 +13,8 @@ Paseo daemon (installed on the machine, ~/.paseo/config.json)
        one profile per role, bound to that role's derived provider: mode build,
        auto_accept, and the role prompt from roles/<role>.md
   -> opencode (ACP server built into the OpenCode CLI)
-  -> Ollama Cloud models resolved by OpenCode: minimax-m3 / glm-5.3 /
-       glm-5.3-flash, with thinking effort medium / high / low
+  -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash / glm-5.3 /
+       glm-5.3-flash, with thinking effort high / high / low
   -> shared contract at ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
@@ -84,7 +84,7 @@ them keep working.
 
 | Profile | Provider | Model (Ollama Cloud) | Thinking | Mode | Auto-accept |
 | --- | --- | --- | --- | --- | --- |
-| `opencode-supervisor` | `opencode-supervisor` | `minimax-m3` | `medium` | `build` | yes |
+| `opencode-supervisor` | `opencode-supervisor` | `deepseek-v4.1-flash` | `high` | `build` | yes |
 | `opencode-lead` | `opencode-lead` | `glm-5.3` | `high` | `build` | yes |
 | `opencode-peer` | `opencode-peer` | `glm-5.3-flash` | `low` | `build` | yes |
 
@@ -107,7 +107,8 @@ contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
 - Model, thinking effort, mode, auto-accept, profile names, and the derived
   role providers (id, label, model catalog): `config/room.json`. Thinking
   options are per-model — list valid values with
-  `paseo provider models opencode` (e.g. `glm-5.3` has no `medium`). A derived
+  `paseo provider models opencode` (e.g. `glm-5.3` has no `medium`, and
+  `deepseek-v4.1-flash` offers only `low`, `high`, `max`). A derived
   provider's `models` array *replaces* that provider's discovered catalog, so
   list every model and thinking option that role provider should offer.
 - Shared coordination rules: `workflow/WORKSPACE_PROTOCOL.md`.

@@ -85,11 +85,11 @@ paseo provider models opencode            # the base provider's full catalog
 paseo provider models opencode-supervisor # a role provider: only its own models
 ```
 
-Thinking options are per-model (`minimax-m3` has `medium`; `glm-5.3` does
-not). A profile may also omit `thinkingOptionId` entirely for a model without
-thinking options. A role provider's catalog is exactly what `config/room.json`
-declares for it, so a model that exists on `opencode` is still unavailable on
-that seat until the spec lists it.
+Thinking options are per-model (`deepseek-v4.1-flash` offers `low`, `high`, and
+`max`; `glm-5.3` has no `medium`). A profile may also omit `thinkingOptionId`
+entirely for a model without thinking options. A role provider's catalog is
+exactly what `config/room.json` declares for it, so a model that exists on
+`opencode` is still unavailable on that seat until the spec lists it.
 
 ## Roll back a bad sync
 

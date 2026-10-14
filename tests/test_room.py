@@ -62,9 +62,10 @@ class RenderTest(unittest.TestCase):
 
     def test_derived_provider_models_are_detached_from_the_spec(self):
         spec = load_spec()
+        original = spec["providers"][0]["models"][0]["label"]
         rendered = room.render_providers(spec)
         rendered[spec["providers"][0]["id"]]["models"][0]["label"] = "mutated"
-        self.assertEqual(spec["providers"][0]["models"][0]["label"], "MiniMax M3")
+        self.assertEqual(spec["providers"][0]["models"][0]["label"], original)
 
     def test_render_omits_thinking_option_when_spec_lacks_it(self):
         spec = load_spec()

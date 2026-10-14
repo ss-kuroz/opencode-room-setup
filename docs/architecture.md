@@ -6,11 +6,11 @@
 ~/.paseo/config.json                     (owned by the operator's Paseo install)
   agents.providers[]                     (managed by scripts/room.py sync)
     "opencode"            enabled + command override -> real opencode.exe
-    "opencode-supervisor"  extends opencode / minimax-m3    (default) / thinking medium (default)
+    "opencode-supervisor"  extends opencode / deepseek-v4.1-flash (default) / thinking high (default)
     "opencode-lead"        extends opencode / glm-5.3       (default) / thinking high   (default)
     "opencode-peer"        extends opencode / glm-5.3-flash (default) / thinking low    (default)
   daemon.agentProfiles[]                 (managed by scripts/room.py sync)
-    "opencode-supervisor"  provider opencode-supervisor / minimax-m3    / thinking medium / build / auto_accept
+    "opencode-supervisor"  provider opencode-supervisor / deepseek-v4.1-flash / thinking high / build / auto_accept
     "opencode-lead"        provider opencode-lead       / glm-5.3       / thinking high   / build / auto_accept
     "opencode-peer"        provider opencode-peer       / glm-5.3-flash / thinking low    / build / auto_accept
       |
