@@ -7,15 +7,15 @@
     {
       "id": "opencode-supervisor",
       "label": "OpenCode - Supervisor",
-      "description": "Supervisor seat on the OpenCode provider: DeepSeek V4.1 Flash, thinking high.",
+      "description": "Supervisor seat on the OpenCode provider: DeepSeek V4.1 Flash, thinking low.",
       "models": [
         {
           "id": "ollama-cloud/deepseek-v4.1-flash",
           "label": "DeepSeek V4.1 Flash",
           "isDefault": true,
           "thinkingOptions": [
-            { "id": "low", "label": "Low" },
-            { "id": "high", "label": "High", "isDefault": true },
+            { "id": "low", "label": "Low", "isDefault": true },
+            { "id": "high", "label": "High" },
             { "id": "max", "label": "Max" }
           ]
         }
@@ -62,7 +62,7 @@
       "role": "supervisor",
       "providerId": "opencode-supervisor",
       "model": "ollama-cloud/deepseek-v4.1-flash",
-      "thinkingOptionId": "high",
+      "thinkingOptionId": "low",
       "modeId": "build",
       "autoAccept": true
     },

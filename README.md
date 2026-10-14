@@ -14,7 +14,7 @@ Paseo daemon (installed on the machine, ~/.paseo/config.json)
        auto_accept, and the role prompt from roles/<role>.md
   -> opencode (ACP server built into the OpenCode CLI)
   -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash / glm-5.3 /
-       glm-5.3-flash, with thinking effort high / high / low
+       glm-5.3-flash, with thinking effort low / high / low
   -> shared contract at ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
@@ -84,7 +84,7 @@ them keep working.
 
 | Profile | Provider | Model (Ollama Cloud) | Thinking | Mode | Auto-accept |
 | --- | --- | --- | --- | --- | --- |
-| `opencode-supervisor` | `opencode-supervisor` | `deepseek-v4.1-flash` | `high` | `build` | yes |
+| `opencode-supervisor` | `opencode-supervisor` | `deepseek-v4.1-flash` | `low` | `build` | yes |
 | `opencode-lead` | `opencode-lead` | `glm-5.3` | `high` | `build` | yes |
 | `opencode-peer` | `opencode-peer` | `glm-5.3-flash` | `low` | `build` | yes |
 

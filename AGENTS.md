@@ -17,7 +17,7 @@ Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế h
 `extends: "opencode"` + label riêng + catalog model với model và thinking của
 vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (provider
 trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash` /
-`glm-5.3` / `glm-5.3-flash` kèm thinking `high` / `high` / `low`, mode
+`glm-5.3` / `glm-5.3-flash` kèm thinking `low` / `high` / `low`, mode
 `build`, `auto_accept`, prompt từ `roles/*.md`), cộng mục provider gốc
 `opencode` (ghim `enabled: true` + `command` override vào exe thật, mà ba
 provider dẫn xuất kế thừa); upsert theo tên/id và giữ nguyên id cùng mọi thứ
