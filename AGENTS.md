@@ -2,7 +2,7 @@
 
 ## Đây là repo gì
 
-**amp-room-setup** (git repo lồng, `origin` `ss-kuroz/codex-room-setup`,
+**amp-room-setup** (git repo lồng, `origin` `ss-kuroz/amp-room-setup`,
 branch `main` — commit bên trong nó, không bao giờ từ root Kuro.agentic):
 cấu hình tái lập cho phòng 3 vai trò SLP (Supervisor / Lead / Peer) chạy bằng
 **Amp** qua **Paseo đã cài sẵn trên máy**. Không còn mảng Codex runtime hay
