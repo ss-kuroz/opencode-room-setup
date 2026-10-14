@@ -2,26 +2,29 @@
 
 ## Đây là repo gì
 
-**amp-room-setup** (git repo lồng, `origin` `ss-kuroz/amp-room-setup`,
-branch `main` — commit bên trong nó, không bao giờ từ root Kuro.agentic):
-cấu hình tái lập cho phòng 3 vai trò SLP (Supervisor / Lead / Peer) chạy bằng
-**Amp** qua **Paseo đã cài sẵn trên máy**. Không còn mảng Codex runtime hay
-build Paseo từ source — tất cả đã bị xóa trong refactor Oct 2026.
+**opencode-room-setup** (git repo lồng, `origin` `ss-kuroz/opencode-room-setup`
+— fork của `hoangnb24/codex-room-setup`, branch `main` — commit bên trong nó,
+không bao giờ từ root Kuro.agentic): cấu hình tái lập cho phòng 3 vai trò SLP
+(Supervisor / Lead / Peer) chạy bằng **OpenCode** qua **Paseo đã cài sẵn trên
+máy**. Kế thừa lineage codex-room-setup → amp-room-setup qua git history; room
+Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế hoàn toàn.
 
 ## Kiến trúc trong 1 câu
 
-`scripts/room.py sync` render provider `amp-acp` + 3 `daemon.agentProfiles`
-("amp-supervisor" medium / "amp-lead" high / "amp-peer" low, mode
-`local`, `auto_accept`) từ `config/room.json` + `roles/*.md`, upsert theo tên
-vào `~/.paseo/config.json` (giữ nguyên id và mọi thứ khác), cài
+`scripts/room.py sync` render 3 `daemon.agentProfiles`
+("opencode-supervisor" / "opencode-lead" / "opencode-peer": provider `opencode`
+built-in của Paseo, model Ollama Cloud `minimax-m3` / `glm-5.3` /
+`glm-5.3-flash` kèm thinking `medium` / `high` / `low`, mode `build`,
+`auto_accept`) từ `config/room.json` + `roles/*.md`, upsert theo tên vào
+`~/.paseo/config.json` (giữ nguyên id và mọi thứ khác), cài
 `workflow/WORKSPACE_PROTOCOL.md` tới
-`~/.config/amp-room/workflow/WORKSPACE_PROTOCOL.md`, rồi gọi
+`~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`, rồi gọi
 `paseo daemon reload` (không bao giờ restart daemon).
 
 ## Nguồn sự thật
 
 - Prompt 3 role: `roles/<role>.md` (được nhúng vào field `notes` của profile).
-- Model/mode/auto-accept/tên profile: `config/room.json`.
+- Model/thinking/mode/auto-accept/tên profile: `config/room.json`.
 - Hợp đồng phối hợp chung: `workflow/WORKSPACE_PROTOCOL.md`.
 - Logic merge: `scripts/room.py` (stdlib Python, fail loud, exit != 0 khi lỗi).
 
@@ -37,19 +40,36 @@ py scripts\room.py verify --source
 ```
 
 Trên máy này (Windows): Paseo daemon desktop-managed port 6767, `paseo.cmd`
-ở `~/.local/bin`, `amp-acp` cài global qua npm, `amp.exe` ở `~/.amp/bin`.
-Provider entry đã tồn tại (có `AMP_CLI_PATH` riêng của máy) — sync không ghi
-đè nó.
+ở `~/.local/bin`, OpenCode CLI v2.0.29 cài global qua npm (exe thật ở
+`AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe`, shim
+`opencode.CMD` ở `AppData\Roaming\npm`), Ollama Cloud đã auth trong OpenCode.
+Provider `opencode` là built-in của Paseo — sync quản lý 2 key trong entry:
+`enabled: true` và `command` override trỏ vào exe thật (xem gotcha về npm
+shim bên dưới); các key khác trong entry được giữ nguyên.
 
 ## Gotchas
 
-- **Paseo Desktop UI có thể xóa/sửa agent profile** (đã xảy ra: cả 3 profile
-  SLP bị xóa lúc 2026-10-14 22:57 ngay sau khi archive workspace). Đó không
-  phải bug của sync — chạy lại `sync` để khôi phục; `verify` chỉ ra drift.
+- Model của room chạy qua **Ollama Cloud trong OpenCode** (không qua Amp):
+  mất auth thì agent start lỗi — kiểm tra bằng
+  `paseo provider diagnostic opencode`, đăng nhập lại bằng
+  `opencode auth login`.
+- Thinking effort là per-model: `minimax-m3` có `medium`, còn `glm-5.3` chỉ có
+  low/high/max — đổi model trong `config/room.json` thì kiểm tra lại thinking
+  hợp lệ bằng `paseo provider models opencode`.
+- **Paseo Desktop UI có thể xóa/sửa agent profile** (đã từng xảy ra với room
+  Amp lúc 2026-10-14). Đó không phải bug của sync — chạy lại `sync` để khôi
+  phục; `verify` chỉ ra drift.
+- **npm install tạo shim `opencode.CMD` — Node không spawn được `.cmd` không
+  shell (spawn EINVAL). Không có command override thì Paseo fallback âm thầm
+  sang integration OpenCode v1 legacy (root paths) và agent fail với lỗi
+  "Request is not supported by this version of OpenCode Server". Sync tự pin
+  `command: {mode: "replace", argv: [<opencode.exe thật>]}` trong entry
+  provider `opencode` (resolve từ shim lúc sync). Đừng xóa key này bằng tay —
+  chạy lại `sync` là khôi phục.**
 - Session đang chạy không nhận prompt mới; profile chỉ có hiệu lực khi tạo
   agent mới.
 - Không sửa tay các mục room trong `~/.paseo/config.json` — regenerated.
-- Backup mọi lần sync nằm ở `~/.amp-room-backups/`.
+- Backup mọi lần sync nằm ở `~/.opencode-room-backups/`.
 - File tiếng Việt/markdown phải UTF-8 không BOM, line ending LF.
 - **VenV ở root workspace là shim của Windows Store Python — bị Windows chặn
   ghi vào mọi path trong `%USERPROFILE%` (PermissionError cả ở `~/.paseo`).

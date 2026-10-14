@@ -3,7 +3,7 @@
 ## Change a role
 
 1. Edit `roles/<role>.md` (prompt/authority) or `config/room.json`
-   (model, mode, auto-accept, profile names).
+   (model, thinking effort, mode, auto-accept, profile names).
 2. Run `make test` and `python scripts/room.py verify --source`.
 3. Run `python scripts/room.py sync` and check the post-sync verification.
 4. Existing sessions keep their original instructions; create a new session
@@ -62,4 +62,4 @@ The Paseo Desktop UI can edit or delete room profiles. `python scripts/room.py
 verify` reports exactly which field of which profile drifted;
 `python scripts/room.py sync` restores it without disturbing unrelated
 profiles or providers. Config backups from every sync live under
-`~/.amp-room-backups/`.
+`~/.opencode-room-backups/`.

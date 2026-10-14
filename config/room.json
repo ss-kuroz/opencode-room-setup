@@ -1,31 +1,31 @@
 {
-  "providerId": "amp-acp",
+  "providerId": "opencode",
   "provider": {
-    "extends": "acp",
-    "label": "Amp",
-    "description": "ACP wrapper for Amp - the frontier coding agent",
-    "command": ["amp-acp"]
+    "enabled": true
   },
   "agentProfiles": [
     {
-      "name": "amp-supervisor",
+      "name": "opencode-supervisor",
       "role": "supervisor",
-      "model": "medium",
-      "modeId": "local",
+      "model": "ollama-cloud/minimax-m3",
+      "thinkingOptionId": "medium",
+      "modeId": "build",
       "autoAccept": true
     },
     {
-      "name": "amp-lead",
+      "name": "opencode-lead",
       "role": "lead",
-      "model": "high",
-      "modeId": "local",
+      "model": "ollama-cloud/glm-5.3",
+      "thinkingOptionId": "high",
+      "modeId": "build",
       "autoAccept": true
     },
     {
-      "name": "amp-peer",
+      "name": "opencode-peer",
       "role": "peer",
-      "model": "low",
-      "modeId": "local",
+      "model": "ollama-cloud/glm-5.3-flash",
+      "thinkingOptionId": "low",
+      "modeId": "build",
       "autoAccept": true
     }
   ]

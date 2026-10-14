@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Manage the SLP Amp room (Supervisor / Lead / Peer) on an installed Paseo daemon.
+"""Manage the SLP OpenCode room (Supervisor / Lead / Peer) on an installed Paseo daemon.
 
-The room is three Paseo agent profiles backed by the `amp-acp` provider:
-each profile pins a model effort level, `local` mode, auto-accept, and a role
-prompt rendered from roles/<role>.md. Paseo itself is operator-installed and
-is never built, patched, or restarted by this repository.
+The room is three Paseo agent profiles backed by the built-in `opencode`
+provider: each profile pins an Ollama Cloud model and thinking effort resolved
+through OpenCode, `build` mode, auto-accept, and a role prompt rendered from
+roles/<role>.md. sync also pins the provider entry's `enabled` flag and its
+`command` override to the real OpenCode executable: npm installs put an
+`opencode.CMD` shim on PATH, Node refuses to spawn `.cmd` shims without a
+shell (EINVAL), and Paseo then silently falls back to its legacy OpenCode v1
+integration, which requests API paths OpenCode v2 servers do not serve.
+Paseo itself is operator-installed and is never built, patched, or restarted
+by this repository.
 
 Subcommands:
-  sync        upsert the provider and the three room profiles into the Paseo
-              config, install the shared workspace protocol, reload the daemon.
+  sync        upsert the provider entry and the three room profiles into the
+              Paseo config, install the shared workspace protocol, reload the
+              daemon.
   verify      read-only checks of the repo sources and the installed state.
   uninstall   remove exactly the artifacts sync manages.
 
@@ -20,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import shutil
 import string
@@ -33,10 +41,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = REPO_ROOT / "config" / "room.json"
 ROLES_DIR = REPO_ROOT / "roles"
 PROTOCOL_PATH = REPO_ROOT / "workflow" / "WORKSPACE_PROTOCOL.md"
-MANAGED_LABEL = "amp-room"
 
-PROTOCOL_INSTALL_SUBPATH = Path(".config") / "amp-room" / "workflow" / "WORKSPACE_PROTOCOL.md"
+PROTOCOL_INSTALL_SUBPATH = Path(".config") / "opencode-room" / "workflow" / "WORKSPACE_PROTOCOL.md"
 PROFILE_ID_PREFIX = "agent_profile_"
+BACKUP_DIRNAME = ".opencode-room-backups"
+MANAGED_PROFILE_KEYS = ("provider", "model", "modeId", "thinkingOptionId", "featureValues", "notes")
+PROVIDER_MANAGED_KEYS = ("enabled", "command")
+LEGACY_STACK_PATTERN = re.compile(r"\b(?:codex|amp)\b", re.IGNORECASE)
+SHIM_TARGET_PATTERN = re.compile(r'"([^"\n]*node_modules[^"\n]*opencode\.exe)"')
 
 
 class RoomError(Exception):
@@ -74,16 +86,18 @@ def render_profiles(spec: dict) -> list[dict]:
         if role in seen:
             raise RoomError(f"duplicate role in spec: {role}")
         seen.add(role)
-        profiles.append(
-            {
-                "name": name,
-                "provider": spec["providerId"],
-                "model": entry["model"],
-                "modeId": entry["modeId"],
-                "featureValues": {"auto_accept": entry["autoAccept"]},
-                "notes": role_notes(role),
-            }
-        )
+        profile = {
+            "name": name,
+            "provider": spec["providerId"],
+            "model": entry["model"],
+            "modeId": entry["modeId"],
+            "featureValues": {"auto_accept": entry["autoAccept"]},
+            "notes": role_notes(role),
+        }
+        # Optional per-model: a model without thinking options simply omits it.
+        if entry.get("thinkingOptionId"):
+            profile["thinkingOptionId"] = entry["thinkingOptionId"]
+        profiles.append(profile)
     return profiles
 
 
@@ -94,18 +108,78 @@ def generate_profile_id() -> str:
     return PROFILE_ID_PREFIX + first + "_" + second
 
 
-def merge_provider(config: dict, spec: dict) -> bool:
-    """Ensure the room provider exists. Never modify an existing entry."""
-    providers = config.setdefault("agents", {}).setdefault("providers", {})
-    provider_id = spec["providerId"]
-    if provider_id in providers:
-        return False
+def resolve_opencode_binary() -> str:
+    """Return the real OpenCode executable Paseo's daemon can spawn directly.
+
+    npm installs create `opencode.CMD` shims. Node refuses to spawn `.cmd`
+    and `.bat` files without a shell (spawn EINVAL), so Paseo's version probe
+    fails and it silently falls back to the legacy OpenCode v1 integration,
+    which requests root-path API endpoints that OpenCode v2 servers answer
+    with the web UI's HTML page. Resolve the shim to the packaged
+    `opencode.exe` so sync can pin it as the provider command.
+    """
+    found = shutil.which("opencode")
+    if found is None:
+        raise RoomError("'opencode' not found on PATH; install the OpenCode CLI first")
+    resolved = Path(found)
+    if resolved.suffix.lower() in (".exe", ".com"):
+        return str(resolved)
+    try:
+        text = resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        raise RoomError(f"cannot read the opencode shim at {resolved} to resolve the real executable")
+    match = SHIM_TARGET_PATTERN.search(text)
+    if match is None:
+        raise RoomError(
+            f"cannot resolve the real opencode executable from the shim at {resolved}; "
+            "reinstall the OpenCode CLI (npm install -g @opencode/cli)"
+        )
+    target = match.group(1)
+    for token in ("%dp0%", "%~dp0", "$basedir"):
+        target = target.replace(token, str(resolved.parent))
+    candidate = Path(target)
+    if not candidate.is_absolute():
+        candidate = resolved.parent / candidate
+    if not candidate.exists():
+        raise RoomError(
+            f"the opencode shim {resolved} points at {candidate}, which does not exist; "
+            "reinstall the OpenCode CLI (npm install -g @opencode/cli)"
+        )
+    return str(candidate)
+
+
+def desired_provider_entry(spec: dict) -> dict:
+    """Render the provider keys this room manages from the spec and machine."""
     entry = dict(spec["provider"])
     entry["enabled"] = True
-    amp_path = shutil.which("amp")
-    if amp_path:
-        entry.setdefault("env", {})["AMP_CLI_PATH"] = amp_path
-    providers[provider_id] = entry
+    entry["command"] = {"mode": "replace", "argv": [resolve_opencode_binary()]}
+    return entry
+
+
+def merge_provider(config: dict, spec: dict) -> bool:
+    """Ensure the room provider entry exists with the managed keys correct.
+
+    `enabled` and `command` are room-managed: the built-in opencode provider
+    must be enabled and must launch the real OpenCode executable rather than
+    an unspawnable npm shim. Any other keys in an existing entry are preserved
+    untouched.
+    """
+    providers = config.setdefault("agents", {}).setdefault("providers", {})
+    provider_id = spec["providerId"]
+    desired = desired_provider_entry(spec)
+    current = providers.get(provider_id)
+    if current is None:
+        providers[provider_id] = desired
+        return True
+    if not isinstance(current, dict):
+        raise RoomError(f"agents.providers.{provider_id} in the Paseo config is not an object")
+    merged = dict(current)
+    for key, value in desired.items():
+        merged[key] = value
+    if merged == current:
+        return False
+    current.clear()
+    current.update(merged)
     return True
 
 
@@ -127,7 +201,11 @@ def merge_profiles(config: dict, desired: list[dict]) -> bool:
             continue
         merged = dict(current)
         merged.update(want)
-        merged["provider"] = want["provider"]
+        # A managed key the desired entry does not carry is removed, so
+        # dropping thinkingOptionId from the spec really removes it.
+        for key in MANAGED_PROFILE_KEYS:
+            if key not in want:
+                merged.pop(key, None)
         if merged != current:
             current.clear()
             current.update(merged)
@@ -181,7 +259,7 @@ def backup_config(home: Path) -> Path | None:
     if not src.exists():
         return None
     stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
-    backup_dir = home / ".amp-room-backups"
+    backup_dir = home / BACKUP_DIRNAME
     backup_dir.mkdir(parents=True, exist_ok=True)
     dst = backup_dir / f"paseo-config-{stamp}.json"
     shutil.copy2(src, dst)
@@ -243,16 +321,18 @@ def verify_sources() -> list[str]:
         except RoomError as exc:
             problems.append(str(exc))
             continue
-        if "~/.config/amp-room/" not in notes:
-            problems.append(f"roles/{entry['role']}.md does not reference the amp-room protocol path")
-        if "codex" in notes.lower().replace("amp-room", ""):
-            problems.append(f"roles/{entry['role']}.md still mentions Codex")
+        if "~/.config/opencode-room/" not in notes:
+            problems.append(f"roles/{entry['role']}.md does not reference the opencode-room protocol path")
+        if LEGACY_STACK_PATTERN.search(notes):
+            problems.append(f"roles/{entry['role']}.md still mentions the legacy Codex/Amp stack")
     if not PROTOCOL_PATH.exists():
         problems.append(f"missing {PROTOCOL_PATH}")
     else:
         protocol = PROTOCOL_PATH.read_text(encoding="utf-8")
-        if "~/.config/amp-room/" not in protocol:
+        if "~/.config/opencode-room/" not in protocol:
             problems.append("WORKSPACE_PROTOCOL.md does not state its install path")
+        if LEGACY_STACK_PATTERN.search(protocol):
+            problems.append("WORKSPACE_PROTOCOL.md still mentions the legacy Codex/Amp stack")
     return problems
 
 
@@ -261,10 +341,20 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
     config = read_config(home)
     providers = config.get("agents", {}).get("providers", {})
     provider_id = spec["providerId"]
-    if provider_id not in providers:
+    try:
+        desired_provider = desired_provider_entry(spec)
+    except RoomError as exc:
+        problems.append(str(exc))
+        desired_provider = None
+    current_provider = providers.get(provider_id)
+    if current_provider is None:
         problems.append(f"provider '{provider_id}' missing from ~/.paseo/config.json")
-    elif providers[provider_id].get("enabled") is not True:
-        problems.append(f"provider '{provider_id}' is not enabled")
+    elif not isinstance(current_provider, dict):
+        problems.append(f"agents.providers.{provider_id} in the Paseo config is not an object")
+    elif desired_provider is not None:
+        for key in PROVIDER_MANAGED_KEYS:
+            if current_provider.get(key) != desired_provider.get(key):
+                problems.append(f"provider '{provider_id}' differs on '{key}'; run sync")
     existing = {
         p.get("name"): p
         for p in config.get("daemon", {}).get("agentProfiles", [])
@@ -275,8 +365,8 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
         if current is None:
             problems.append(f"agent profile '{want['name']}' missing; run sync")
             continue
-        for key in ("provider", "model", "modeId", "featureValues", "notes"):
-            if current.get(key) != want[key]:
+        for key in MANAGED_PROFILE_KEYS:
+            if current.get(key) != want.get(key):
                 problems.append(f"agent profile '{want['name']}' differs on '{key}'; run sync")
     protocol_dst = home / PROTOCOL_INSTALL_SUBPATH
     if not protocol_dst.exists():
@@ -285,9 +375,6 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
         encoding="utf-8"
     ).replace("\r\n", "\n"):
         problems.append(f"installed protocol differs from {PROTOCOL_PATH}; run sync")
-    for tool in ("amp", "amp-acp"):
-        if shutil.which(tool) is None:
-            problems.append(f"'{tool}' not found on PATH")
     return problems
 
 
@@ -310,7 +397,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     print(f"config written: {paseo_config_path(home)}")
     if backup:
         print(f"backup: {backup}")
-    print(f"provider '{spec['providerId']}': {'created' if provider_added else 'present (untouched)'}")
+    print(f"provider '{spec['providerId']}': {'created or repaired' if provider_added else 'present (unchanged)'}")
     print(f"agent profiles: {'updated' if profiles_changed else 'present (unchanged)'}")
     print(f"shared protocol: {'installed' if protocol_changed else 'present (unchanged)'}")
     reload_note = daemon_reload(home)
@@ -397,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     p_uninstall = sub.add_parser("uninstall", help="remove the artifacts managed by this room")
     p_uninstall.add_argument("--home", type=Path, default=default_home, help="operator home (default: ~)")
     p_uninstall.add_argument(
-        "--purge-provider", action="store_true", help="also remove the amp-acp provider entry"
+        "--purge-provider", action="store_true", help="also remove the opencode provider entry"
     )
     p_uninstall.set_defaults(func=cmd_uninstall)
 

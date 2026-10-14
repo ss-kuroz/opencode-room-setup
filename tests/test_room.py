@@ -35,30 +35,109 @@ class RenderTest(unittest.TestCase):
         for profile, entry in zip(profiles, spec["agentProfiles"]):
             self.assertEqual(profile["provider"], spec["providerId"])
             self.assertEqual(profile["model"], entry["model"])
+            self.assertEqual(profile["thinkingOptionId"], entry["thinkingOptionId"])
             self.assertEqual(profile["modeId"], entry["modeId"])
             self.assertEqual(profile["featureValues"], {"auto_accept": entry["autoAccept"]})
             self.assertTrue(profile["notes"].strip())
-            self.assertIn("~/.config/amp-room/", profile["notes"])
+            self.assertIn("~/.config/opencode-room/", profile["notes"])
+
+    def test_render_omits_thinking_option_when_spec_lacks_it(self):
+        spec = load_spec()
+        for entry in spec["agentProfiles"]:
+            entry.pop("thinkingOptionId", None)
+        for profile in room.render_profiles(spec):
+            self.assertNotIn("thinkingOptionId", profile)
+
+
+class ResolveBinaryTest(unittest.TestCase):
+    def test_resolves_npm_cmd_shim_to_packaged_exe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shim = Path(tmp) / "opencode.cmd"
+            shim.write_text(
+                '@ECHO off\n'
+                'GOTO start\n'
+                ':find_dp0\n'
+                'SET dp0=%~dp0\n'
+                'EXIT /b\n'
+                ':start\n'
+                'SETLOCAL\n'
+                'CALL :find_dp0\n'
+                '"%dp0%\\node_modules\\@opencode\\cli\\bin\\opencode.exe"   %*\n',
+                encoding="utf-8",
+            )
+            exe = Path(tmp) / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"stub")
+            real_which = room.shutil.which
+            room.shutil.which = lambda name: str(shim)
+            try:
+                self.assertEqual(room.resolve_opencode_binary(), str(exe))
+            finally:
+                room.shutil.which = real_which
+
+    def test_missing_binary_fails_loud(self):
+        real_which = room.shutil.which
+        room.shutil.which = lambda name: None
+        try:
+            with self.assertRaises(room.RoomError):
+                room.resolve_opencode_binary()
+        finally:
+            room.shutil.which = real_which
+
+    def test_unresolvable_shim_fails_loud(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shim = Path(tmp) / "opencode.cmd"
+            shim.write_text('@echo off\n', encoding="utf-8")
+            real_which = room.shutil.which
+            room.shutil.which = lambda name: str(shim)
+            try:
+                with self.assertRaises(room.RoomError):
+                    room.resolve_opencode_binary()
+            finally:
+                room.shutil.which = real_which
 
 
 class ProviderMergeTest(unittest.TestCase):
-    def test_creates_provider_when_missing(self):
+    def setUp(self):
+        self._real_resolve = room.resolve_opencode_binary
+        room.resolve_opencode_binary = lambda: "X:\\tools\\opencode.exe"
+
+    def tearDown(self):
+        room.resolve_opencode_binary = self._real_resolve
+
+    def test_creates_managed_entry_when_missing(self):
         spec = load_spec()
         config = minimal_config()
         changed = room.merge_provider(config, spec)
         self.assertTrue(changed)
         entry = config["agents"]["providers"][spec["providerId"]]
-        self.assertEqual(entry["command"], spec["provider"]["command"])
         self.assertIs(entry["enabled"], True)
+        self.assertEqual(entry["command"], {"mode": "replace", "argv": ["X:\\tools\\opencode.exe"]})
 
-    def test_never_touches_existing_provider(self):
+    def test_repairs_managed_keys_and_preserves_others(self):
         spec = load_spec()
         config = minimal_config(provider=True)
-        original = {"extends": "acp", "command": ["amp-acp"], "env": {"AMP_CLI_PATH": "X:\\amp.exe"}}
-        config["agents"]["providers"][spec["providerId"]] = dict(original)
+        config["agents"]["providers"][spec["providerId"]] = {
+            "enabled": False,
+            "env": {"X": "1"},
+        }
+        changed = room.merge_provider(config, spec)
+        self.assertTrue(changed)
+        entry = config["agents"]["providers"][spec["providerId"]]
+        self.assertIs(entry["enabled"], True)
+        self.assertEqual(entry["command"], {"mode": "replace", "argv": ["X:\\tools\\opencode.exe"]})
+        self.assertEqual(entry["env"], {"X": "1"})
+
+    def test_is_idempotent(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        room.merge_provider(config, spec)
+        before = json.dumps(config["agents"]["providers"][spec["providerId"]], sort_keys=True)
         changed = room.merge_provider(config, spec)
         self.assertFalse(changed)
-        self.assertEqual(config["agents"]["providers"][spec["providerId"]], original)
+        self.assertEqual(
+            json.dumps(config["agents"]["providers"][spec["providerId"]], sort_keys=True), before
+        )
 
 
 class ProfileMergeTest(unittest.TestCase):
@@ -82,20 +161,37 @@ class ProfileMergeTest(unittest.TestCase):
 
     def test_update_preserves_id_and_position(self):
         config = minimal_config()
-        other = {"id": "agent_profile_other", "name": "Operator profile", "provider": "amp-acp"}
+        other = {"id": "agent_profile_other", "name": "Operator profile", "provider": "opencode"}
         config["daemon"]["agentProfiles"].append(other)
         desired = room.render_profiles(load_spec())
         room.merge_profiles(config, desired)
-        lead = next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "amp-lead")
+        lead = next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "opencode-lead")
         # Change one desired note and re-merge: same id, same slot, unrelated profile kept.
         desired[1] = dict(desired[1], notes=desired[1]["notes"] + "\nUpdated.")
         changed = room.merge_profiles(config, desired)
         self.assertTrue(changed)
         self.assertEqual(
-            next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "amp-lead")["id"],
+            next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "opencode-lead")["id"],
             lead["id"],
         )
         self.assertIn(other, config["daemon"]["agentProfiles"])
+
+    def test_update_drops_managed_keys_missing_from_desired(self):
+        config = minimal_config()
+        desired = room.render_profiles(load_spec())
+        room.merge_profiles(config, desired)
+        peer = next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "opencode-peer")
+        self.assertEqual(peer["thinkingOptionId"], "low")
+        trimmed = []
+        for want in desired:
+            entry = dict(want)
+            if entry["name"] == "opencode-peer":
+                entry.pop("thinkingOptionId")
+            trimmed.append(entry)
+        changed = room.merge_profiles(config, trimmed)
+        self.assertTrue(changed)
+        peer = next(p for p in config["daemon"]["agentProfiles"] if p["name"] == "opencode-peer")
+        self.assertNotIn("thinkingOptionId", peer)
 
     def test_rejects_non_list_agentProfiles(self):
         config = {"daemon": {"agentProfiles": "nope"}}
@@ -153,7 +249,7 @@ class UnmergeTest(unittest.TestCase):
 
     def test_noop_when_nothing_managed(self):
         config = minimal_config()
-        self.assertFalse(room.unmerge_profiles(config, ["amp-lead"]))
+        self.assertFalse(room.unmerge_profiles(config, ["opencode-lead"]))
 
 
 class SyncFlowTest(unittest.TestCase):

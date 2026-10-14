@@ -29,25 +29,55 @@ installs Paseo:
 paseo onboard
 ```
 
-## Agents fail with a provider error for `amp-acp`
+## Agents fail with "Request is not supported by this version of OpenCode Server"
 
-The ACP adapter or the Amp CLI is missing or logged out:
+Cause: Paseo resolved `opencode` on PATH to the npm `opencode.CMD` shim. The
+daemon's Node cannot spawn `.cmd` shims without a shell (spawn EINVAL), so
+Paseo's version probe fails and it silently falls back to the legacy OpenCode
+v1 integration, which requests root-path API endpoints that OpenCode v2
+servers answer with the web UI's HTML page.
+
+`sync` prevents this by pinning a `command` override
+(`{"mode": "replace", "argv": [<real opencode.exe>]}`) in the provider entry,
+resolved from the shim at sync time. If the error still appears:
 
 ```bash
-amp --version            # Amp CLI installed and authenticated
-amp-acp --version        # adapter on PATH (npm install -g amp-acp)
+python scripts/room.py verify          # provider 'opencode' differs on 'command'?
+python scripts/room.py sync            # repairs the override, reloads the daemon
+paseo provider diagnostic opencode     # expect: Command source: override, Status: Ready
 ```
 
-If `amp` is not on the daemon's PATH, set `AMP_CLI_PATH` in the provider's
-`env` in `~/.paseo/config.json`; an existing provider entry is never modified
-by `sync`, so this stays operator-owned.
+## The OpenCode CLI is missing or logged out of Ollama Cloud
+
+```bash
+opencode --version                     # v2.0.10 minimum; v2.0.29 was verified
+opencode auth login                    # Ollama Cloud credentials live inside OpenCode
+paseo provider diagnostic opencode     # installation, auth, availability
+paseo provider models opencode         # models Paseo can currently see
+```
+
+Credentials stay inside OpenCode; this repository never stores them.
+
+## A model or thinking option is rejected
+
+Model and thinking ids drift with the OpenCode/Ollama catalog. List what the
+provider currently accepts, then align `config/room.json`:
+
+```bash
+paseo provider models opencode
+```
+
+Thinking options are per-model (`minimax-m3` has `medium`; `glm-5.3` does
+not). A profile may also omit `thinkingOptionId` entirely for a model without
+thinking options.
 
 ## Roll back a bad sync
 
-Every sync copies the previous config to `~/.amp-room-backups/`. To restore:
+Every sync copies the previous config to `~/.opencode-room-backups/`. To
+restore:
 
 ```bash
-cp ~/.amp-room-backups/<stamp>.json ~/.paseo/config.json
+cp ~/.opencode-room-backups/<stamp>.json ~/.paseo/config.json
 paseo daemon reload
 ```
 
