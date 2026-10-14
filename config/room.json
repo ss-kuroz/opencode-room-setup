@@ -41,11 +41,11 @@
     {
       "id": "opencode-peer",
       "label": "OpenCode - Peer",
-      "description": "Peer seat on the OpenCode provider: GLM-5.3-Flash, thinking low.",
+      "description": "Peer seat on the OpenCode provider: DeepSeek V4.1 Flash, thinking low.",
       "models": [
         {
-          "id": "ollama-cloud/glm-5.3-flash",
-          "label": "GLM-5.3-Flash",
+          "id": "ollama-cloud/deepseek-v4.1-flash",
+          "label": "DeepSeek V4.1 Flash",
           "isDefault": true,
           "thinkingOptions": [
             { "id": "low", "label": "Low", "isDefault": true },
@@ -79,7 +79,7 @@
       "name": "opencode-peer",
       "role": "peer",
       "providerId": "opencode-peer",
-      "model": "ollama-cloud/glm-5.3-flash",
+      "model": "ollama-cloud/deepseek-v4.1-flash",
       "thinkingOptionId": "low",
       "modeId": "build",
       "autoAccept": true

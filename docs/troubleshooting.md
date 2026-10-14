@@ -105,9 +105,9 @@ Two causes were seen on Paseo 0.11.2:
 
 - `provider must be provider/model, for example codex/gpt-5.4` — the call
   passed a bare provider id. A room seat is a derived provider, so the id has
-  to carry its model explicitly: `opencode-peer/ollama-cloud/glm-5.3-flash`,
-  `opencode-lead/ollama-cloud/glm-5.3`,
-  `opencode-supervisor/ollama-cloud/deepseek-v4.1-flash`.
+  to carry its model explicitly: `opencode-peer/ollama-cloud/deepseek-v4.1-flash`,
+  `opencode-supervisor/ollama-cloud/deepseek-v4.1-flash`,
+  `opencode-lead/ollama-cloud/glm-5.3`.
 - `Unrecognized key: "background"` — `create_agent`'s bridge schema has no
   `background` field even though the tool description mentions one. Create the
   session with a one-line `initialPrompt`, then send the real brief through

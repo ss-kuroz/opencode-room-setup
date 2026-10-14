@@ -17,7 +17,7 @@ Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
          auto_accept, và prompt vai trò lấy từ roles/<role>.md
     -> opencode (ACP server có sẵn trong OpenCode CLI, không cần adapter)
     -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash / glm-5.3 /
-       glm-5.3-flash, kèm thinking effort low / high / low
+       deepseek-v4.1-flash, kèm thinking effort low / high / low
     -> hợp đồng chung: ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
