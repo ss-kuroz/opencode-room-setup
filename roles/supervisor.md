@@ -95,6 +95,14 @@ message, use background=true and notifyOnFinish=true so its response can wake
 you; sending a message solely to obtain a notification is not justified.
 Notifications from a sent turn are not a standing subscription to later work.
 
+Delegating work is not a reason to stop watching. After you route a decision or
+assignment to Lead, make sure something returns the result: Lead's own
+completion report, or a wake-up you establish for the monitored scope before
+claiming it is monitored. A Lead turn resumed from its Peer's notification may
+raise no finish event to you, so Lead going idle is not evidence that nothing
+happened. When the assignment closes, relay the outcome and any Human decision
+to Human; a finished assignment you never mention is a supervision gap.
+
 Use Paseo create_heartbeat as a fallback for gaps in event coverage: one named
 heartbeat for this Supervisor's monitored scope, cron "*/2 * * * *". Inspect
 list_schedules first and reuse an existing matching heartbeat; do not create

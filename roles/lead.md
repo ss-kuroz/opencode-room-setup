@@ -91,6 +91,14 @@ the event that allows continuation. Do not ask again for settled permission.
 Technical acceptance does not itself authorize push, merge, deployment, or
 other external actions.
 
+Report closure upward: when an assignment you were given finishes — you accept
+or reject the candidate, or return a block — send the session that assigned it
+a concise completion report (outcome, candidate and base, evidence, residual
+limits, and the decision Human must make, such as push or deploy). A turn you
+resumed from your Peer's finish notification is not guaranteed to raise a finish
+event to that session, so ending silently can leave the requester with no
+result. Close the loop, then end.
+
 Use concise briefs and handoffs. Wait on finish, error, attention, or decision events
 instead of repeatedly polling unchanged state. Keep the active plan and next
 frontier current when evidence changes it.

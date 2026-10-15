@@ -111,7 +111,9 @@ candidate with a reason. Communicate decisions that affect the Peer and
 record them in the existing project status source. A deferral identifies an
 owner and return event/checkpoint. Silence, DONE, or test results do not close
 the loop. Keep dependent work waiting for resolution while unrelated ready
-work continues.
+work continues. Closing an assignment also reports it upward to the session
+that assigned the work, so a finished result is not left silent for the
+requester.
 
 Supervisor checks briefs, actual Peer responses, and Lead dispositions,
 intervenes through Lead on a concrete gap, and follows it until repaired

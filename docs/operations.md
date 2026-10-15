@@ -104,6 +104,23 @@ bounded question; there is no extra standing role.
 After dispatch, wait for finish, error, attention, or decision events. Do not
 repeatedly query a seat while its state is unchanged.
 
+## Close the loop upward
+
+A Peer's finish wakes its Lead, and the Lead then continues and closes the
+assignment. That closing turn is not started by a message from the Supervisor,
+so it does not always raise a finish event to the Supervisor, and the Supervisor
+can be left unaware while a result sits finished. At least one of two mechanisms
+must keep Human informed:
+
+- Lead sends the assigning session a concise completion report when it accepts,
+  rejects, or blocks, so the Supervisor is woken directly (`roles/lead.md`).
+- The Supervisor establishes a wake-up for the monitored scope before claiming
+  it is monitored, so a missing event is caught on the next check
+  (`roles/supervisor.md`).
+
+The Supervisor relays the outcome and any Human decision to Human; a closed
+assignment that no one mentions is a supervision gap, not a quiet success.
+
 ## Restore drift
 
 The Paseo Desktop UI can edit or delete room profiles or derived role providers.
