@@ -17,10 +17,13 @@ Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế h
 `extends: "opencode"` + label riêng + catalog model với model và thinking của
 vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (provider
 trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash` /
-`glm-5.3` / `deepseek-v4.1-flash` kèm thinking `low` / `high` / `low`, mode
+`deepseek-v4-pro` / `deepseek-v4.1-flash` kèm thinking `low` / `max` / `low`, mode
 `build`, `auto_accept`, prompt từ `roles/*.md`), cộng mục provider gốc
 `opencode` (ghim `enabled: true` + `command` override vào exe thật, mà ba
-provider dẫn xuất kế thừa); upsert theo tên/id và giữ nguyên id cùng mọi thứ
+provider dẫn xuất kế thừa; ba provider dẫn xuất còn mang overlay
+`env.OPENCODE_CONFIG_CONTENT` tắt multi-agent của OpenCode cho ghế (mục
+`nativeAgents: false` trong spec sinh ra nó, provider gốc không bị đụng);
+upsert theo tên/id và giữ nguyên id cùng mọi thứ
 khác, cài `workflow/WORKSPACE_PROTOCOL.md` tới
 `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`, rồi gọi
 `paseo daemon reload` (không bao giờ restart daemon).
@@ -65,9 +68,22 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   mất auth thì agent start lỗi — kiểm tra bằng
   `paseo provider diagnostic opencode`, đăng nhập lại bằng
   `opencode auth login`.
-- Thinking effort là per-model: `deepseek-v4.1-flash` và `glm-5.3` chỉ có
-  low/high/max — đổi model trong `config/room.json` thì kiểm tra lại thinking
-  hợp lệ bằng `paseo provider models opencode`.
+- Thinking effort là per-model: `deepseek-v4.1-flash` có low/high/max, còn
+  `deepseek-v4-pro` chỉ có high/max — đổi model trong `config/room.json` thì
+  kiểm tra lại thinking hợp lệ bằng `paseo provider models opencode`.
+- **Multi-agent của OpenCode bị tắt riêng cho ba ghế room.** Mỗi provider dẫn
+  xuất (`opencode-supervisor` / `-lead` / `-peer`) mang
+  `env.OPENCODE_CONFIG_CONTENT` do mục `nativeAgents: false` trong
+  `config/room.json` sinh ra: deny quyền `subagent` và disable hai agent con
+  built-in `general` / `explore`, nên ghế không còn tool agent con nào. Đây là
+  invariant kế thừa từ codex room (native agents disabled trong từng runtime) —
+  Paseo sở hữu topology, agent con tự sinh sẽ nằm ngoài hợp đồng báo cáo. Provider
+  gốc `opencode` **không** mang overlay, nên việc OpenCode riêng của bạn vẫn còn
+  multi-agent. Kiểm tra: `py scripts\room.py verify` (xem `env` như managed key)
+  và `paseo daemon config get agents.providers --json` (đường dẫn config có key
+  động không đọc được, phải đọc cả object); đừng xóa tay
+  key này — chạy lại `sync` là khôi phục. Overlay là env của process, nên phải
+  tạo agent mới sau khi sync mới thấy hiệu lực.
 - **Paseo Desktop UI có thể xóa/sửa agent profile** (đã từng xảy ra với room
   Amp lúc 2026-10-14). Đó không phải bug của sync — chạy lại `sync` để khôi
   phục; `verify` chỉ ra drift.
@@ -88,6 +104,21 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   `send_agent_prompt` kèm `background: true` + `notifyOnFinish: true`. Truyền
   `workspaceId` của project, đừng để top-level create mở workspace mới. Chi
   tiết ở `docs/troubleshooting.md`, cách giao việc ở `docs/operations.md`.
+- Vòng báo cáo Sup ↔ Lead dựa trên hai thứ, không phải thiện chí: (1) phong bì
+  dispatch ghi **địa chỉ báo cáo** — agent id của session giao việc, đọc từ env
+  `PASEO_AGENT_ID` mà Paseo inject cho mỗi session (kèm `PASEO_AGENT_CWD`); env
+  này nằm trong bundle `app.asar` của Paseo, đã kiểm chứng bằng `PASEO_AGENT_ID`
+  trong `resources/app.asar`; (2) Lead giữ **status surface** của project hiện
+  thời. Lý do: Paseo arm finish-notification theo *từng* lần `send_agent_prompt`,
+  nên Lead được đánh thức bởi notification của Peer rồi đóng việc thì Sup không
+  nhận event nào. Sup mỗi lần wake phải đọc state vòng đời + activity của Lead
+  và status surface trước khi kết luận "không có gì xảy ra", idle-mà-còn-task-mở
+  thì hỏi đúng một lần, việc đã đóng mà chưa relay cho Human là supervision gap.
+  Lead bí về scope/priority/authority/intent thì hỏi Sup **một câu hỏi bounded**
+  và vẫn chạy việc lành khác; Sup trả lời từ evidence, route lên Human nếu là
+  quyết định của Human, hoặc nói không có evidence — trả lời không biến Sup
+  thành technical Lead. Luật đầy đủ ở mục "Reporting, status, and escalation"
+  của `workflow/WORKSPACE_PROTOCOL.md`.
 - Việc chân tay của một task đã được giao thuộc về **Peer**, không phải
   workload của Lead: Lead giữ framing, hợp đồng giữa các phần, integration,
   kiểm chứng và accept/reject. Luật này nằm ở `roles/lead.md` và mục

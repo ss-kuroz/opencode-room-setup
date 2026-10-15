@@ -7,11 +7,13 @@
   agents.providers[]                     (managed by scripts/room.py sync)
     "opencode"            enabled + command override -> real opencode.exe
     "opencode-supervisor"  extends opencode / deepseek-v4.1-flash (default) / thinking low  (default)
-    "opencode-lead"        extends opencode / glm-5.3             (default) / thinking high (default)
+    "opencode-lead"        extends opencode / deepseek-v4-pro     (default) / thinking max  (default)
     "opencode-peer"        extends opencode / deepseek-v4.1-flash (default) / thinking low  (default)
+                           each derived entry also carries env.OPENCODE_CONFIG_CONTENT, which
+                           removes OpenCode's native child agents from that seat
   daemon.agentProfiles[]                 (managed by scripts/room.py sync)
     "opencode-supervisor"  provider opencode-supervisor / deepseek-v4.1-flash / thinking low  / build / auto_accept
-    "opencode-lead"        provider opencode-lead       / glm-5.3             / thinking high / build / auto_accept
+    "opencode-lead"        provider opencode-lead       / deepseek-v4-pro     / thinking max  / build / auto_accept
     "opencode-peer"        provider opencode-peer       / deepseek-v4.1-flash / thinking low  / build / auto_accept
       |
       v
@@ -27,6 +29,21 @@ There is no generated runtime. Paseo gives each agent its own session, and
 OpenCode owns its own state (auth, sessions, plugins under
 `~/.config/opencode` / `~/.local/share/opencode`). A role is fully described
 by its derived provider entry plus its agent profile entry.
+
+## Reporting loop
+
+Paseo arms a finish notification per `send_agent_prompt` call, so events cover a
+directly prompted turn but not the turn a Lead resumes when its Peer finishes.
+Two channels close that gap: the dispatch envelope names the assigning session's
+own agent id (from `PASEO_AGENT_ID`) as the return address, and Lead keeps the
+project's work-status source current as a status surface. Supervisor reads the
+Lead's lifecycle state, recent activity, and that surface on each wake before
+concluding that nothing happened, asks once when an idle Lead still has an open
+assignment, and relays the outcome to Human. A Lead that cannot settle scope,
+priority, authority, or intent asks the Supervisor one bounded question and
+continues its unrelated ready work meanwhile; the Supervisor answers from
+evidence, routes a Human decision to Human, or says no evidence supports an
+answer — without taking over the project's technical decisions.
 
 ## Why two layers
 
@@ -49,6 +66,38 @@ declare `label`, it inherits the base provider's launch settings, and a
 non-empty `models` array replaces the catalog discovered from the provider.
 That is why the role providers never declare `command` themselves — the base
 `opencode` entry owns the resolved executable path.
+
+## No native child agents in a seat
+
+Paseo owns the room topology — Supervisor, Lead, and Peer are the only agents,
+and each dispatch names its owner and return channel. An OpenCode child agent
+launched inside a seat would sit outside that contract: nobody assigned it,
+nothing reports it, and no one owns its writes. The three derived role providers
+therefore carry an `env` overlay that Paseo merges into that seat's OpenCode
+server:
+
+```jsonc
+{
+  "OPENCODE_CONFIG_CONTENT": {
+    "permissions": [{ "action": "subagent", "resource": "*", "effect": "deny" }],
+    "agents": { "general": { "disabled": true }, "explore": { "disabled": true } }
+  }
+}
+```
+
+OpenCode layers `OPENCODE_CONFIG_CONTENT` over the config documents it discovers,
+so the seat's permissions gain a deny that no approval can override, and the
+built-in child agents leave the seat's catalog. With no launchable child agent,
+the seat has no child-agent tool at all. The operator's own
+`~/.config/opencode/opencode.jsonc` is never rewritten, and the base `opencode`
+provider entry carries no overlay — native subagents stay available everywhere
+except in the three seats.
+
+`config/room.json`'s `nativeAgents` flag is the switch: `false` (the shipped
+value) renders the overlay into every derived provider, `true` renders none and
+sync removes it from the installed entries. `verify` compares the overlay as a
+managed key, so a hand-edited or reset derived provider is reported as drift and
+restored by the next `sync`.
 
 ## Ownership
 
@@ -85,12 +134,13 @@ upserts them into `daemon.agentProfiles` **by name**:
   every request returns the web UI's HTML page). Other keys in the entry are
   preserved.
 - The derived role providers are upserted by id the same way. Every key this
-  repository renders (`extends`, `label`, `description`, `models`) is
-  room-owned, so a key the spec no longer carries is removed; unrelated keys an
-  operator added by hand (`enabled`, `env`) survive. A derived provider id must
-  match Paseo's `^[a-z][a-z0-9-]*$` and must not be one of Paseo's built-in ids —
-  `verify --source` and `sync` both refuse a spec that breaks either rule, or
-  that binds a profile to a provider the spec never declares.
+  repository renders (`extends`, `label`, `description`, `models`, `env`) is
+  room-owned, so a key the spec no longer carries is removed — including the
+  native-agent overlay when `nativeAgents` is `true`; unrelated keys an operator
+  added by hand (`enabled`, `order`, `paseoTools`) survive. A derived provider id
+  must match Paseo's `^[a-z][a-z0-9-]*$` and must not be one of Paseo's built-in
+  ids — `verify --source` and `sync` both refuse a spec that breaks either rule,
+  or that binds a profile to a provider the spec never declares.
 - The previous config is copied to `~/.opencode-room-backups/` before each
   write, and the write itself is atomic (temp file + replace).
 - After writing, sync asks a running daemon to `reload`; it never restarts the
@@ -123,6 +173,12 @@ provider entry — nothing else.
   integration: agents fail with "Request is not supported by this version of
   OpenCode Server (Server responded with text/html)". Re-run `sync` to
   repair the override.
+- If a derived provider loses its native-agent `env` overlay — a hand edit, a
+  Paseo reset, or a config restored from an older backup — that seat gets
+  OpenCode's native child agents back. `verify` names the entry and the `env`
+  key; `sync` restores it. The overlay is process env, so it reaches the seat
+  when Paseo launches that provider's OpenCode server, not retroactively into a
+  server already running.
 - Model and thinking ids can drift when the OpenCode/Ollama catalog changes.
   `paseo provider models opencode` lists what Paseo can currently see; update
   `config/room.json` to match. A derived role provider shows only the models and

@@ -48,6 +48,8 @@ material differences from the brief; keep evidence accessible beyond the
 current session without exposing private data.
 
 Do not spawn, manage, or coordinate other agents, infer room topology, or
-accept your own difficult change. Tests and completion messages are evidence;
+accept your own difficult change. Your seat has no child-agent tool, and a
+helper you think you need is a report to Lead, not something you start. Tests
+and completion messages are evidence;
 Lead decides technical acceptance. Wait for events and requested decisions
 instead of repeatedly polling unchanged state.

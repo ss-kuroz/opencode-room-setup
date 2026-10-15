@@ -15,6 +15,15 @@ The room is published in two Paseo layers, because Paseo splits the two jobs:
     role prompt rendered from roles/<role>.md, `build` mode, auto-accept, and the
     pinned model + thinking effort.
 
+Each derived role provider also carries an `env` overlay that Paseo merges into
+the OpenCode server it launches for that seat. The room uses it to disable
+OpenCode's own child agents, because Paseo owns the Supervisor/Lead/Peer
+topology: a seat that could launch unmanaged children would bypass the reporting
+and ownership contract. The overlay denies the `subagent` permission and drops
+the built-in `general`/`explore` agents from that seat's catalog. Only the three
+derived entries carry it — the base `opencode` provider keeps native subagents,
+so the operator's own OpenCode work is unaffected.
+
 sync also pins the base `opencode` provider entry's `enabled` flag and its
 `command` override to the real OpenCode executable: npm installs put an
 `opencode.CMD` shim on PATH, Node refuses to spawn `.cmd` shims without a
@@ -60,13 +69,34 @@ BACKUP_DIRNAME = ".opencode-room-backups"
 MANAGED_PROFILE_KEYS = ("provider", "model", "modeId", "thinkingOptionId", "featureValues", "notes")
 PROVIDER_MANAGED_KEYS = ("enabled", "command")
 # The whole derived entry is room-owned: it exists only because the spec declares it.
-DERIVED_PROVIDER_MANAGED_KEYS = ("extends", "label", "description", "models")
+DERIVED_PROVIDER_MANAGED_KEYS = ("extends", "label", "description", "models", "env")
 # Paseo accepts a custom provider id only in this alphabet, and derives a custom
 # provider only when the id is not one of its built-in provider ids.
 PROVIDER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 BUILTIN_PROVIDER_IDS = ("claude", "codex", "copilot", "opencode", "pi", "omp")
 LEGACY_STACK_PATTERN = re.compile(r"\b(?:codex|amp)\b", re.IGNORECASE)
 SHIM_TARGET_PATTERN = re.compile(r'"([^"\n]*node_modules[^"\n]*opencode\.exe)"')
+
+# Disabling OpenCode's native child agents for the room seats. Paseo owns the
+# Supervisor/Lead/Peer topology, so a seat must not be able to spawn an agent of
+# its own: an unmanaged child would sit outside the dispatch, ownership, and
+# reporting contract. `permissions` is the enforcement layer — a configured deny
+# cannot be approved away, and OpenCode filters any denied agent out of the
+# `subagent` tool's catalog. `agents` removes the built-in `general`/`explore`
+# subagents from the seat's catalog as well, so the capability is absent rather
+# than merely refused.
+NATIVE_AGENT_POLICY = {
+    "permissions": [{"action": "subagent", "resource": "*", "effect": "deny"}],
+    "agents": {
+        "general": {"disabled": True},
+        "explore": {"disabled": True},
+    },
+}
+# Paseo merges a provider entry's `env` into the OpenCode server it launches for
+# that provider; OpenCode layers OPENCODE_CONFIG_CONTENT over the discovered
+# config documents, so the seat's permissions gain the deny rule and its agent
+# catalog loses the built-in subagents. The user's own config files are untouched.
+NATIVE_AGENT_ENV_KEY = "OPENCODE_CONFIG_CONTENT"
 
 
 class RoomError(Exception):
@@ -119,6 +149,16 @@ def render_profiles(spec: dict) -> list[dict]:
     return profiles
 
 
+def native_agents_enabled(spec: dict) -> bool:
+    """Whether the room lets its seats keep OpenCode's own child agents."""
+    return spec.get("nativeAgents") is not False
+
+
+def native_agent_env() -> dict[str, str]:
+    """The `env` overlay that removes OpenCode's native child agents from a seat."""
+    return {NATIVE_AGENT_ENV_KEY: json.dumps(NATIVE_AGENT_POLICY)}
+
+
 def render_providers(spec: dict) -> dict[str, dict]:
     """Build the desired `agents.providers` entries for the derived role providers.
 
@@ -128,6 +168,10 @@ def render_providers(spec: dict) -> dict[str, dict]:
     place where sync pins the real OpenCode executable. `models` replaces that
     provider's discovered catalog, so each role provider offers exactly the
     role's model, with the role's thinking effort marked as its default.
+
+    Each derived entry also carries the native-agent `env` overlay unless the
+    spec asks to keep them, so the seats lose OpenCode's child agents while the
+    base `opencode` provider keeps them.
     """
     providers: dict[str, dict] = {}
     for entry in spec.get("providers", []):
@@ -138,6 +182,8 @@ def render_providers(spec: dict) -> dict[str, dict]:
         }
         if entry.get("description"):
             provider["description"] = entry["description"]
+        if not native_agents_enabled(spec):
+            provider["env"] = native_agent_env()
         providers[entry["id"]] = provider
     return providers
 
@@ -154,6 +200,8 @@ def validate_spec(spec: dict) -> list[str]:
     if not isinstance(base_provider_id, str) or not base_provider_id.strip():
         problems.append("spec is missing a non-empty providerId")
         base_provider_id = ""
+    if not isinstance(spec.get("nativeAgents"), bool):
+        problems.append("spec is missing a boolean nativeAgents flag")
     derived = spec.get("providers", [])
     if not isinstance(derived, list):
         problems.append("spec providers must be a list")
@@ -336,8 +384,9 @@ def merge_providers(config: dict, spec: dict) -> bool:
     """Upsert the derived role providers; preserve every other provider entry.
 
     Each derived entry is wholly owned by the spec, so a managed key the desired
-    entry does not carry is dropped. Unrelated keys an operator added by hand
-    (for example `enabled` or `env`) survive.
+    entry does not carry is dropped — including the native-agent `env` overlay
+    when the spec asks to keep native agents. Unrelated keys an operator added by
+    hand (for example `enabled`, `order`, or `paseoTools`) survive.
     """
     providers = config.setdefault("agents", {}).setdefault("providers", {})
     if not isinstance(providers, dict):

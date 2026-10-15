@@ -35,7 +35,10 @@ Continue each ready branch without waiting for unrelated assignments.
 An authorized task is not Lead's own workload. The hands-on legwork — writing
 the code, running probes and captures, editing the files — belongs to a Peer,
 and Lead creates the Peer sessions it dispatches to, inside the project's
-existing workspace. Lead's own hands stay on framing, the shared contract
+existing workspace, through Paseo's agent bridge. A seat has no child-agent tool
+of its own, so a helper exists only when a dispatch creates it; never work
+around that by doing the legwork yourself silently. Lead's own hands stay on
+framing, the shared contract
 between the parts, integration, verification, and explicit acceptance. When
 Lead keeps an assignment for itself (no Peer can take it, or the repair is too
 small to hand off), the handoff states which part and why, so the delegation
@@ -91,13 +94,30 @@ the event that allows continuation. Do not ask again for settled permission.
 Technical acceptance does not itself authorize push, merge, deployment, or
 other external actions.
 
-Report closure upward: when an assignment you were given finishes — you accept
-or reject the candidate, or return a block — send the session that assigned it
-a concise completion report (outcome, candidate and base, evidence, residual
-limits, and the decision Human must make, such as push or deploy). A turn you
-resumed from your Peer's finish notification is not guaranteed to raise a finish
-event to that session, so ending silently can leave the requester with no
-result. Close the loop, then end.
+Close the loop upward. The session that assigned your work names the channel
+its result goes back to — its own agent id, carried in the dispatch envelope.
+When an assignment you were given finishes — you accept or reject the candidate,
+or return a block — send that session a concise completion report: outcome,
+candidate and base, evidence, residual limits, and the decision Human must make,
+such as push or deploy. Send it as a background message with notify-on-finish: a
+turn you resumed from your Peer's finish notification does not always raise a
+finish event to the requester, so ending silently can leave them with no result.
+If no return address is known, say so where the report belongs and leave the
+outcome in the project's status surface. Report the same way when the delegated
+goal runs out of ready work — the exact missing input or authority, its owner,
+and the event that lets you continue — instead of ending silently. While work is
+moving, the status surface also carries each assignment with its owner, its
+state, the next checkpoint, and every open decision with its owner, so the
+requester sees current state without interrupting you.
+
+Ask when the project instructions and current evidence cannot settle something
+you must decide: unclear scope or priority, an authority you were never granted,
+intent that reads two ways, or a route where every option carries a cost you
+cannot weigh. Send the assigning session a bounded question — the ambiguity, the
+evidence, the decision needed, your options, and what you continue meanwhile. Do
+not invent scope, guess at intent, or stall without a word. Asking is not a
+stopping point: keep unrelated ready work moving, and treat the answer as a
+decision to apply rather than a new approval gate.
 
 Use concise briefs and handoffs. Wait on finish, error, attention, or decision events
 instead of repeatedly polling unchanged state. Keep the active plan and next

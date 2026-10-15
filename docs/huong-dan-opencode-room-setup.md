@@ -16,8 +16,8 @@ Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
          mỗi vai trò một profile, trỏ vào provider dẫn xuất tương ứng: mode build,
          auto_accept, và prompt vai trò lấy từ roles/<role>.md
     -> opencode (ACP server có sẵn trong OpenCode CLI, không cần adapter)
-    -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash / glm-5.3 /
-       deepseek-v4.1-flash, kèm thinking effort low / high / low
+    -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash /
+       deepseek-v4-pro / deepseek-v4.1-flash, kèm thinking effort low / max / low
     -> hợp đồng chung: ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
@@ -36,6 +36,15 @@ vai trò — cùng `modeId` và `auto_accept`. Provider không mang được pro
 auto-accept, nên ba provider dẫn xuất không thay thế profile; cả hai tầng mới là
 phòng. Nhờ tầng provider, danh sách provider của Paseo có `OpenCode - Supervisor
 / Lead / Peer`, mỗi mục đã mặc định sẵn model và thinking effort của vai trò.
+
+Ba provider dẫn xuất còn mang thêm một overlay `env`
+(`OPENCODE_CONFIG_CONTENT`) mà Paseo trộn vào server OpenCode của chính ghế đó:
+overlay này **tắt multi-agent của OpenCode** trong ghế — deny quyền `subagent`
+và gỡ hai agent con built-in `general` / `explore` khỏi catalog, nên ghế không
+còn tool gọi agent con nào cả. Lý do: Paseo sở hữu topology Supervisor/Lead/Peer,
+một agent con do ghế tự sinh sẽ nằm ngoài hợp đồng dispatch / ownership / báo
+cáo. Provider gốc `opencode` **không** bị đụng tới, nên phần việc OpenCode riêng
+của bạn vẫn giữ nguyên multi-agent.
 
 ## Ranh giới trách nhiệm
 
@@ -80,8 +89,8 @@ daemon đang chạy.
 Đổi model hoặc thinking effort: sửa `config/room.json` (cả mục `providers` của
 vai trò và `model`/`thinkingOptionId` của profile). Thinking là per-model — kiểm
 tra option hợp lệ bằng `paseo provider models opencode` (ví dụ
-`deepseek-v4.1-flash` chỉ có low/high/max, còn `glm-5.3` cũng chỉ có
-low/high/max). Model không có thinking option thì bỏ trường `thinkingOptionId`;
+`deepseek-v4.1-flash` có low/high/max, còn `deepseek-v4-pro` chỉ có
+high/max). Model không có thinking option thì bỏ trường `thinkingOptionId`;
 sync sẽ xóa nó khỏi profile đã cài.
 
 ## Luồng một candidate
@@ -98,6 +107,42 @@ workspace là bằng chứng hỗ trợ; chúng không tự tạo thành accepta
 Sau khi dispatch, các role chờ event finish, error, attention, hoặc decision.
 Không lặp lại truy vấn khi state chưa đổi.
 
+## Vòng báo cáo: Sup ↔ Lead ↔ Human
+
+Một assignment đóng xong mà session đã giao việc không hề biết là lỗi vận
+hành, không phải "êm". Ba thói quen giữ vòng đó kín:
+
+- **Địa chỉ báo cáo.** Session giao việc đọc agent id của chính nó từ
+  environment (`PASEO_AGENT_ID`) và ghi vào phong bì dispatch, để bên nhận biết
+  gửi kết quả về đâu. Đây là metadata vận hành, không phải attribution — không
+  đưa vào brief của Peer hay artifact của project.
+- **Status surface.** Chủ của phần việc đang chạy giữ nguồn work-status sẵn có
+  của project luôn hiện thời: assignment và owner, state (dispatched / in
+  progress / awaiting <ai> / blocked / accepted), checkpoint kế tiếp, và mọi
+  quyết định đang mở kèm owner. Human và Sup đọc đây thay vì ngắt việc lành.
+- **Báo lên trên.** Khi outcome đóng (accept / reject / block), owner gửi report
+  ngắn cho session đã giao: outcome, candidate và base, evidence, giới hạn còn
+  lại, và quyết định Human phải ra. Gửi bằng background message kèm
+  `notifyOnFinish` — một turn được đánh thức bởi notification của Peer không
+  đảm bảo phát finish event cho requester, nên kết thúc im lặng là mất kết quả.
+  Hết việc sẵn sàng trong phạm vi được giao cũng báo theo cách đó.
+
+Khi scope, priority, authority, hay intent không giải quyết được từ instruction
+và evidence hiện có, Lead gửi Sup **một câu hỏi bounded**: điểm mơ hồ, evidence,
+quyết định cần có, các phương án, và việc Lead vẫn tiếp tục trong lúc chờ. Không
+tự phát minh scope, không đoán intent, không im lặng chờ. Hỏi không phải điểm
+dừng: việc lành không liên quan vẫn chạy tiếp, và câu trả lời là quyết định để
+áp dụng, không phải một approval gate mới.
+
+Phía Sup: mỗi lần wake (event hoặc heartbeat) phải đọc state vòng đời của Lead
+đang giám sát, activity gần nhất, và status surface **trước khi** kết luận là
+không có gì xảy ra. Lead idle mà còn assignment mở → hỏi Lead đúng một lần, ngắn,
+xin kết quả hoặc blocker. Assignment đã đóng mà chưa ai nói với Human → đó là
+supervision gap. Sup trả lời câu hỏi của Lead từ evidence hiện có, route lên
+Human nếu là quyết định thuộc Human, hoặc nói thẳng là không có evidence; trả lời
+không biến Sup thành technical Lead — Sup không accept candidate, không ra lệnh
+cho Peer.
+
 ## Sửa ở đâu?
 
 - Đổi prompt hoặc authority của role: sửa `roles/<role>.md`.
@@ -111,6 +156,11 @@ Không lặp lại truy vấn khi state chưa đổi.
   `command` override trỏ vào exe thật (xem gotcha về npm shim trong
   AGENTS.md); các key khác trong entry được giữ nguyên. Ba provider dẫn xuất
   kế thừa launch này nên đường dẫn exe chỉ được ghi ở một chỗ.
+- Bật/tắt multi-agent của OpenCode cho ba ghế: mục `nativeAgents` trong
+  `config/room.json` (`false` = tắt, giá trị đang dùng). Khi tắt, sync render
+  overlay `env.OPENCODE_CONFIG_CONTENT` vào từng provider dẫn xuất; `verify` coi
+  `env` là managed key nên báo drift nếu ghế mất overlay. Provider gốc không bao
+  giờ nhận overlay này.
 - Đổi nguyên tắc phối hợp chung: sửa `workflow/WORKSPACE_PROTOCOL.md`.
 - Đổi logic merge/render: sửa `scripts/room.py` và test boundary tương ứng
   trong `tests/test_room.py`.

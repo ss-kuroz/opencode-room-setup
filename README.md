@@ -13,8 +13,8 @@ Paseo daemon (installed on the machine, ~/.paseo/config.json)
        one profile per role, bound to that role's derived provider: mode build,
        auto_accept, and the role prompt from roles/<role>.md
   -> opencode (ACP server built into the OpenCode CLI)
-  -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash / glm-5.3 /
-       deepseek-v4.1-flash, with thinking effort low / high / low
+  -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash /
+       deepseek-v4-pro / deepseek-v4.1-flash, with thinking effort low / max / low
   -> shared contract at ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
@@ -55,6 +55,16 @@ One cost of the provider layer: Paseo runs one OpenCode server per provider id,
 so the three role providers can hold up to three `opencode` server processes
 while agents are running, instead of one for the whole room.
 
+The three role providers also carry an `env` overlay
+(`OPENCODE_CONFIG_CONTENT`) that Paseo merges into the OpenCode server it
+launches for that seat. It denies the `subagent` permission and removes
+OpenCode's built-in `general` and `explore` child agents, so a room seat has no
+child-agent tool at all. Paseo owns the Supervisor/Lead/Peer topology, and an
+agent spawned by a seat would sit outside the dispatch, ownership, and reporting
+contract. The base `opencode` provider is left alone, so the operator keeps
+native subagents in their own OpenCode work; `config/room.json`'s
+`nativeAgents: false` is what turns the overlay on for the three seats.
+
 ## Prerequisites
 
 - Paseo installed, onboarded, and running (`paseo daemon status`).
@@ -85,7 +95,7 @@ them keep working.
 | Profile | Provider | Model (Ollama Cloud) | Thinking | Mode | Auto-accept |
 | --- | --- | --- | --- | --- | --- |
 | `opencode-supervisor` | `opencode-supervisor` | `deepseek-v4.1-flash` | `low` | `build` | yes |
-| `opencode-lead` | `opencode-lead` | `glm-5.3` | `high` | `build` | yes |
+| `opencode-lead` | `opencode-lead` | `deepseek-v4-pro` | `max` | `build` | yes |
 | `opencode-peer` | `opencode-peer` | `deepseek-v4.1-flash` | `low` | `build` | yes |
 
 Each profile is bound to the derived provider of the same name, whose catalog
@@ -94,21 +104,28 @@ default (`isDefault` in `config/room.json`). `paseo provider ls` shows the three
 role providers next to the base `opencode` provider.
 
 Human retains product, cost, external-effect, and irreversible-risk decisions.
-Supervisor routes Human intent and bounded recovery. Lead owns technical
+Supervisor routes Human intent and bounded recovery, and answers a Lead's
+bounded question about scope, priority, authority, or intent from evidence (or
+routes it to Human) without becoming the technical Lead. Lead owns technical
 framing, dependency order, verification, and explicit candidate acceptance.
 Peer owns one bounded outcome and returns an immutable candidate or a concrete
-block signal. Role authority lives in `roles/*.md`; the shared coordination
-contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
+block signal. Every dispatch names a return channel — the assigning session's
+agent id — and Lead reports completion upward as a background message with
+notify-on-finish, so a finished result is never left silent; Lead also reports
+when it runs out of ready work. Role authority lives in `roles/*.md`; the shared
+coordination contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
 [docs/architecture.md](docs/architecture.md) before changing these boundaries.
 
 ## Where to edit
 
 - Role prompt or authority: `roles/<role>.md`.
 - Model, thinking effort, mode, auto-accept, profile names, and the derived
-  role providers (id, label, model catalog): `config/room.json`. Thinking
+  role providers (id, label, model catalog, and whether the seats keep
+  OpenCode's native child agents — `nativeAgents`): `config/room.json`. Thinking
   options are per-model — list valid values with
-  `paseo provider models opencode` (e.g. `glm-5.3` has no `medium`, and
-  `deepseek-v4.1-flash` offers only `low`, `high`, `max`). A derived
+  `paseo provider models opencode` (e.g. `deepseek-v4-pro` has no `low` and
+  offers only `high`, `max`, while `deepseek-v4.1-flash` offers `low`, `high`,
+  `max`). A derived
   provider's `models` array *replaces* that provider's discovered catalog, so
   list every model and thinking option that role provider should offer.
 - Shared coordination rules: `workflow/WORKSPACE_PROTOCOL.md`.

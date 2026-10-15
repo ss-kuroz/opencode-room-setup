@@ -3,6 +3,7 @@
   "provider": {
     "enabled": true
   },
+  "nativeAgents": false,
   "providers": [
     {
       "id": "opencode-supervisor",
@@ -24,16 +25,15 @@
     {
       "id": "opencode-lead",
       "label": "OpenCode - Lead",
-      "description": "Lead seat on the OpenCode provider: GLM-5.3, thinking high.",
+      "description": "Lead seat on the OpenCode provider: DeepSeek V4 Pro, thinking max.",
       "models": [
         {
-          "id": "ollama-cloud/glm-5.3",
-          "label": "GLM-5.3",
+          "id": "ollama-cloud/deepseek-v4-pro",
+          "label": "DeepSeek V4 Pro",
           "isDefault": true,
           "thinkingOptions": [
-            { "id": "low", "label": "Low" },
-            { "id": "high", "label": "High", "isDefault": true },
-            { "id": "max", "label": "Max" }
+            { "id": "high", "label": "High" },
+            { "id": "max", "label": "Max", "isDefault": true }
           ]
         }
       ]
@@ -70,8 +70,8 @@
       "name": "opencode-lead",
       "role": "lead",
       "providerId": "opencode-lead",
-      "model": "ollama-cloud/glm-5.3",
-      "thinkingOptionId": "high",
+      "model": "ollama-cloud/deepseek-v4-pro",
+      "thinkingOptionId": "max",
       "modeId": "build",
       "autoAccept": true
     },

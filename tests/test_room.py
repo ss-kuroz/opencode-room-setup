@@ -75,9 +75,52 @@ class RenderTest(unittest.TestCase):
             self.assertNotIn("thinkingOptionId", profile)
 
 
+class NativeAgentPolicyTest(unittest.TestCase):
+    def test_derived_providers_disable_native_child_agents(self):
+        spec = load_spec()
+        self.assertIs(spec["nativeAgents"], False)
+        for provider_id, provider in room.render_providers(spec).items():
+            policy = json.loads(provider["env"][room.NATIVE_AGENT_ENV_KEY])
+            self.assertIn(
+                {"action": "subagent", "resource": "*", "effect": "deny"},
+                policy["permissions"],
+                provider_id,
+            )
+            for builtin_subagent in ("general", "explore"):
+                self.assertIs(policy["agents"][builtin_subagent]["disabled"], True, provider_id)
+
+    def test_base_provider_keeps_native_child_agents(self):
+        spec = load_spec()
+        entry = room.desired_provider_entry(spec)
+        self.assertNotIn("env", entry)
+        self.assertEqual(entry["enabled"], True)
+        self.assertEqual(entry["command"]["mode"], "replace")
+
+    def test_spec_can_keep_native_agents(self):
+        spec = load_spec()
+        spec["nativeAgents"] = True
+        for provider in room.render_providers(spec).values():
+            self.assertNotIn("env", provider)
+
+    def test_overlay_is_stable_across_renders(self):
+        spec = load_spec()
+        self.assertEqual(
+            room.render_providers(spec), room.render_providers(load_spec())
+        )
+
+
 class SpecValidationTest(unittest.TestCase):
     def test_shipped_spec_is_valid(self):
         self.assertEqual(room.validate_spec(load_spec()), [])
+
+    def test_rejects_missing_or_non_boolean_native_agents(self):
+        for bad in (None, "false", 0):
+            spec = load_spec()
+            if bad is None:
+                spec.pop("nativeAgents")
+            else:
+                spec["nativeAgents"] = bad
+            self.assertNotEqual(room.validate_spec(spec), [], bad)
 
     def test_rejects_provider_ids_paseo_cannot_derive(self):
         for bad in ("opencode", "OpenCode-Lead", "opencode_lead", "9lead"):
@@ -233,14 +276,25 @@ class DerivedProviderMergeTest(unittest.TestCase):
             "label": "stale",
             "enabled": False,
             "env": {"X": "1"},
+            "paseoTools": {"enabled": False},
         }
         changed = room.merge_providers(config, spec)
         self.assertTrue(changed)
         entry = config["agents"]["providers"][target]
         self.assertEqual(entry["label"], spec["providers"][0]["label"])
         self.assertEqual(entry["extends"], spec["providerId"])
-        self.assertEqual(entry["env"], {"X": "1"})
+        self.assertEqual(entry["env"], room.native_agent_env())
+        self.assertEqual(entry["paseoTools"], {"enabled": False})
         self.assertIs(entry["enabled"], False)
+
+    def test_keeping_native_agents_drops_the_overlay(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        room.merge_providers(config, spec)
+        spec["nativeAgents"] = True
+        self.assertTrue(room.merge_providers(config, spec))
+        for provider in config["agents"]["providers"].values():
+            self.assertNotIn("env", provider)
 
     def test_is_idempotent(self):
         spec = load_spec()
@@ -441,6 +495,24 @@ class SyncFlowTest(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn(target, problems[0])
         self.assertIn("models", problems[0])
+
+    def test_verify_reports_a_seat_that_regained_native_agents(self):
+        spec = load_spec()
+        desired = room.render_profiles(spec)
+        config = room.read_config(self.home)
+        room.merge_provider(config, spec)
+        room.merge_providers(config, spec)
+        room.merge_profiles(config, desired)
+        room.install_protocol(self.home)
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        config = room.read_config(self.home)
+        target = spec["providers"][1]["id"]
+        config["agents"]["providers"][target].pop("env")
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        problems = room.verify_installed(self.home, spec, desired)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(target, problems[0])
+        self.assertIn("env", problems[0])
 
     def test_uninstall_removes_both_layers(self):
         spec = load_spec()

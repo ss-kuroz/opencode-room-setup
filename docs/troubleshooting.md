@@ -86,8 +86,9 @@ paseo provider models opencode-supervisor # a role provider: only its own models
 ```
 
 Thinking options are per-model (`deepseek-v4.1-flash` offers `low`, `high`, and
-`max`; `glm-5.3` has no `medium`). A profile may also omit `thinkingOptionId`
-entirely for a model without thinking options. A role provider's catalog is
+`max`; `deepseek-v4-pro` offers only `high` and `max`). A profile may also omit
+`thinkingOptionId` entirely for a model without thinking options. A role
+provider's catalog is
 exactly what `config/room.json` declares for it, so a model that exists on
 `opencode` is still unavailable on that seat until the spec lists it.
 
@@ -107,7 +108,7 @@ Two causes were seen on Paseo 0.11.2:
   passed a bare provider id. A room seat is a derived provider, so the id has
   to carry its model explicitly: `opencode-peer/ollama-cloud/deepseek-v4.1-flash`,
   `opencode-supervisor/ollama-cloud/deepseek-v4.1-flash`,
-  `opencode-lead/ollama-cloud/glm-5.3`.
+  `opencode-lead/ollama-cloud/deepseek-v4-pro`.
 - `Unrecognized key: "background"` — `create_agent`'s bridge schema has no
   `background` field even though the tool description mentions one. Create the
   session with a one-line `initialPrompt`, then send the real brief through
@@ -118,6 +119,64 @@ Two causes were seen on Paseo 0.11.2:
 A top-level create without `workspaceId` also opens a new workspace rather than
 adopting the project's checkout, so pass the project's existing workspace id.
 The mechanics are in [operations](operations.md#dispatch-work-to-a-peer).
+
+## A finished assignment leaves the Supervisor with no event
+
+Symptom: the Supervisor dispatches work to a Lead, the Lead (and its Peer)
+finishes, and the Supervisor never learns the result — it goes idle, or wakes
+once, sees nothing actionable, and stops watching.
+
+Cause: Paseo arms a finish notification per `send_agent_prompt` call, not per
+session. The Lead's closing turn is resumed by its Peer's notification rather
+than by a Supervisor message, so no notification is armed towards the
+Supervisor and no finish event is raised.
+
+Fix, both halves described in
+[operations](operations.md#close-the-loop-upward):
+
+- The dispatch envelope names the assigning session's own agent id (read from
+  `PASEO_AGENT_ID`, which Paseo injects into every agent session, alongside
+  `PASEO_AGENT_CWD`) as the address the result goes back to. Lead sends its
+  completion report as a background message with `notifyOnFinish=true`, which
+  wakes the Supervisor; with no address known the report goes to the project's
+  status surface instead.
+- The Supervisor reads the Lead's lifecycle state, recent activity
+  (`list_agents`, `get_agent_status`, `get_agent_activity`), and that status
+  surface on every wake — event or heartbeat — before concluding that nothing
+  happened. An idle Lead with an assignment still open gets one concise question
+  for the result or the blocker.
+
+Lead going idle is not evidence that nothing happened, and neither is a quiet
+workspace: a closed assignment nobody relayed to Human is a supervision gap.
+The same section of the protocol is the recovery path for a Lead that stalls
+because it is confused: it asks the Supervisor one bounded question about scope,
+priority, authority, or intent and keeps unrelated ready work moving.
+
+## A room seat has a child-agent tool again
+
+Symptom: an agent created from `opencode-supervisor`, `opencode-lead`, or
+`opencode-peer` can launch OpenCode subagents (`general`, `explore`), which the
+room does not own and nothing reports.
+
+Cause: the seat's derived provider entry lost its `env` overlay — a hand edit, a
+Paseo reset, or a config restored from an older backup. The room takes OpenCode's
+native child agents away through `env.OPENCODE_CONFIG_CONTENT` on the derived
+providers only; the base `opencode` provider intentionally keeps them.
+
+```bash
+python scripts/room.py verify          # names the derived entry that differs on 'env'
+python scripts/room.py sync            # re-renders the overlay, reloads the daemon
+paseo daemon config get agents.providers --json   # each derived entry carries the overlay
+```
+
+Paseo's config-path reader does not resolve dynamic keys, so read the whole
+`agents.providers` object instead of one provider's `env`.
+
+The overlay is process environment: it reaches a seat when Paseo launches that
+provider's OpenCode server, so create a new agent from the profile after the
+repair. To keep native agents in the seats on purpose, set `"nativeAgents": true`
+in `config/room.json` and run `sync` — it removes the overlay from all three
+derived entries.
 
 ## Roll back a bad sync
 

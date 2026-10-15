@@ -42,6 +42,12 @@ evidence, then continue ready work without creating another approval gate.
   `create_agent` rejects a `background` key, so create the session with a short
   prompt and then send its brief with `background: true` and
   `notifyOnFinish: true`.
+- Every room agent is one that Paseo dispatched: the seats launch no child
+  agents of their own. The room disables the harness's native subagents in the
+  Supervisor/Lead/Peer seats, and a Peer never creates or coordinates another
+  agent. A new seat comes from a dispatch through Paseo, not from inside a
+  running session. A seat that finds itself needing a helper reports the need
+  and lets Lead decide.
 - Agree on shared contracts before dispatch. Sequence changes to shared files
   or interfaces; use separate branches or worktrees when needed. Do not start
   blocked work merely to increase parallel activity. Continue each ready
@@ -130,3 +136,46 @@ material cost, external effects, and irreversible risk.
 Use finish, error, attention, and decision events to advance work. Wait for an
 event instead of repeatedly polling unchanged state. Keep handoffs concise and
 decision-ready; add detail only when it changes the route or acceptance.
+
+## Reporting, status, and escalation
+
+A closed assignment must not go silent for the session that opened it, and a
+stuck owner must not stall unnoticed. Three habits keep that loop closed:
+
+- **Return channel.** A session that assigns work names the channel the result
+  goes back to: its own agent id, read from its environment (`PASEO_AGENT_ID`,
+  which Paseo injects into every agent session), stated once in the
+  dispatch envelope. That address is operational metadata, not attribution —
+  keep it out of Peer briefs and project artifacts, and keep the outcome in the
+  report itself. When no address is known, report through the status surface
+  and say the direct channel is unknown.
+- **Status surface.** While work is moving, its owner keeps the project's
+  existing work-status source current: assignment and owner, state (dispatched,
+  in progress, awaiting a named actor, blocked, accepted), next checkpoint, and
+  each open decision with its owner. That is how Human and Supervisor read
+  current state without interrupting healthy work; it is not a second tracker.
+- **Report upward.** When an assigned outcome closes — accepted, rejected, or
+  blocked — its owner sends the assigning session a concise report: outcome,
+  candidate and base, evidence, residual limits, and the decision Human must
+  make. Send it as a background message with notify-on-finish, because a turn
+  resumed from a Peer's notification does not always raise a finish event for
+  the requester. Report the same way when the delegated goal runs out of ready
+  work, instead of ending silently.
+
+When scope, priority, authority, or intent cannot be settled from the project
+instructions and current evidence, the stuck owner asks the session that assigned
+the work one bounded question: the ambiguity, the evidence, the decision needed,
+the options, and what it continues meanwhile. It does not invent scope, guess
+intent, or wait silently; asking is not a stopping point, so unrelated ready work
+continues and the answer is a decision to apply rather than a new gate.
+
+Supervisor answers such a question from current evidence, routes it to Human
+when it is a product, cost, external-effect, or irreversible-risk decision, or
+states that no evidence supports an answer. Answering does not make Supervisor
+the project's technical Lead: it neither accepts a candidate nor directs a Peer.
+
+Supervisor verifies liveness, not only messages. Before concluding on a wake
+that nothing happened, it reads the monitored Lead's lifecycle state, recent
+activity, and the status surface. An idle Lead with an assignment still open is
+asked once for the result or the blocker; a closed assignment that was never
+relayed is a supervision gap, not a quiet success.
