@@ -9,13 +9,19 @@ Paseo daemon (installed on the machine, ~/.paseo/config.json)
        one derived provider per role ("extends": "opencode", own label) whose
        model catalog is exactly the role's model, with the role's thinking
        effort marked as the provider-level default
+       each entry also carries env: OPENCODE_CONFIG_DIR -> that seat's config
+       directory (the seat's role prompt), plus the native-agent policy in
+       OPENCODE_CONFIG_CONTENT
   -> daemon.agentProfiles "opencode-supervisor | opencode-lead | opencode-peer"
        one profile per role, bound to that role's derived provider: mode build,
-       auto_accept, and the role prompt from roles/<role>.md
+       auto_accept, the pinned model and thinking effort, and the role prompt
+       from roles/<role>.md in `notes` (chooser metadata, not a system prompt)
   -> opencode (ACP server built into the OpenCode CLI)
   -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash /
        deepseek-v4-pro / deepseek-v4.1-flash, with thinking effort low / max / low
-  -> shared contract at ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
+  -> files installed by sync per seat, which the seat's prompt is built from:
+       ~/.config/opencode-room/seats/<provider>/agents/build.md
+       ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
 This repository does **not** install Paseo, OpenCode, or Ollama, and it does
@@ -25,18 +31,30 @@ idempotently:
 | Repository source | Local destination |
 | --- | --- |
 | `config/room.json` + `roles/*.md` | `~/.paseo/config.json` → the three derived entries in `agents.providers` and the three `daemon.agentProfiles` entries |
+| `roles/<role>.md` + `workflow/WORKSPACE_PROTOCOL.md` | `~/.config/opencode-room/seats/<provider>/agents/build.md` (the seat's prompt) |
 | `workflow/WORKSPACE_PROTOCOL.md` | `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md` |
 | (backup of every config it rewrites) | `~/.opencode-room-backups/` |
 
 The room is published in two Paseo layers because Paseo splits the two jobs. A
 **provider** entry carries what an operator picks before naming an agent — the
 model, and the thinking effort behind that model — while an **agent profile**
-(the only layer with a `notes` prompt) carries the role instructions, `build`
-mode, and auto-accept. Providers cannot hold a role prompt or an auto-accept
-flag, so the derived providers never replace the profiles; together they are
-the room. Because Paseo's provider list is fed by `agents.providers`, the three
-roles show up there as `OpenCode - Supervisor / Lead / Peer`, each suggesting
-its own model and thinking effort.
+carries `build` mode, auto-accept, and the pinned model + thinking. Providers
+cannot hold those, so the derived providers never replace the profiles; together
+they are the room. Because Paseo's provider list is fed by `agents.providers`, the
+three roles show up there as `OpenCode - Supervisor / Lead / Peer`, each
+suggesting its own model and thinking effort.
+
+Neither layer delivers a prompt to the agent. An agent profile's `notes` are
+chooser metadata — Paseo shows them in its profile list and returns them to
+callers of its `list_profiles` tool — and a profile deliberately carries no system
+prompt, because Paseo's session `systemPrompt` is creation-only: a profile holding
+one would apply to a new agent and silently do nothing when applied to a running
+one. The role contract therefore travels through the seat's own OpenCode server:
+`sync` writes `~/.config/opencode-room/seats/<provider>/agents/build.md`, whose body
+is the seat's prompt (its role contract plus the shared protocol), and the
+provider's `env` points `OPENCODE_CONFIG_DIR` at that directory. OpenCode reads the
+directory when it starts the seat's server, so the seat begins with the authority
+boundary it was dispatched under.
 
 Everything else in `~/.paseo/config.json` — daemon settings, other providers,
 other agent profiles, plugins — is preserved untouched. Sync never restarts the
@@ -55,15 +73,18 @@ One cost of the provider layer: Paseo runs one OpenCode server per provider id,
 so the three role providers can hold up to three `opencode` server processes
 while agents are running, instead of one for the whole room.
 
-The three role providers also carry an `env` overlay
-(`OPENCODE_CONFIG_CONTENT`) that Paseo merges into the OpenCode server it
-launches for that seat. It denies the `subagent` permission and removes
-OpenCode's built-in `general` and `explore` child agents, so a room seat has no
-child-agent tool at all. Paseo owns the Supervisor/Lead/Peer topology, and an
-agent spawned by a seat would sit outside the dispatch, ownership, and reporting
-contract. The base `opencode` provider is left alone, so the operator keeps
-native subagents in their own OpenCode work; `config/room.json`'s
-`nativeAgents: false` is what turns the overlay on for the three seats.
+Each role provider also carries an `env` overlay that Paseo merges into the OpenCode
+server it launches for that seat, and it does two jobs. First, it is how a seat gets
+its role: `OPENCODE_CONFIG_DIR` names the seat's config directory, whose
+`agents/build.md` is the seat's prompt (role contract + shared protocol), so the seat
+starts with the authority boundary it was dispatched under. Second,
+`OPENCODE_CONFIG_CONTENT` denies the `subagent` permission and removes OpenCode's
+built-in `general` and `explore` child agents, so a room seat has no child-agent tool
+at all — Paseo owns the Supervisor/Lead/Peer topology, and an agent spawned by a seat
+would sit outside the dispatch, ownership, and reporting contract.
+`config/room.json`'s `nativeAgents: false` turns that second half on; the role half is
+always on. The base `opencode` provider is left alone, so the operator keeps native
+subagents and their own prompt in their own OpenCode work.
 
 ## Prerequisites
 
@@ -78,7 +99,7 @@ native subagents in their own OpenCode work; `config/room.json`'s
 ## Usage
 
 ```bash
-python scripts/room.py sync      # publish provider + profiles + protocol, reload daemon
+python scripts/room.py sync      # publish provider + profiles + protocol + seat prompts, reload daemon
 python scripts/room.py verify    # read-only check of repo sources and installed state
 python scripts/room.py verify --source   # source-only check, no HOME access
 python scripts/room.py uninstall # remove exactly the managed artifacts
@@ -118,7 +139,10 @@ coordination contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
 
 ## Where to edit
 
-- Role prompt or authority: `roles/<role>.md`.
+- Role prompt or authority: `roles/<role>.md`. `sync` re-renders each seat's
+  `agents/build.md` — the prompt its OpenCode server loads — and refreshes the role
+  prompt in the profile's `notes`; a session already running keeps the prompt it
+  started with, so create a new agent to exercise the change.
 - Model, thinking effort, mode, auto-accept, profile names, and the derived
   role providers (id, label, model catalog, and whether the seats keep
   OpenCode's native child agents — `nativeAgents`): `config/room.json`. Thinking

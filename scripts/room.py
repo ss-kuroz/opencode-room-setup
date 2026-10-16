@@ -12,17 +12,29 @@ The room is published in two Paseo layers, because Paseo splits the two jobs:
     carry a role prompt or auto-accept, so they never replace the profiles.
   * one agent profile per role, still named after the role, bound to that role's
     derived provider. Profiles are Paseo's "named launch bundles": they carry the
-    role prompt rendered from roles/<role>.md, `build` mode, auto-accept, and the
-    pinned model + thinking effort.
+    role prompt rendered from roles/<role>.md as `notes`, `build` mode,
+    auto-accept, and the pinned model + thinking effort.
 
 Each derived role provider also carries an `env` overlay that Paseo merges into
-the OpenCode server it launches for that seat. The room uses it to disable
-OpenCode's own child agents, because Paseo owns the Supervisor/Lead/Peer
-topology: a seat that could launch unmanaged children would bypass the reporting
-and ownership contract. The overlay denies the `subagent` permission and drops
-the built-in `general`/`explore` agents from that seat's catalog. Only the three
-derived entries carry it — the base `opencode` provider keeps native subagents,
-so the operator's own OpenCode work is unaffected.
+the OpenCode server it launches for that seat. Two jobs travel through it:
+
+  * the seat's role contract. No Paseo layer delivers a prompt to an agent: a
+    profile's `notes` are chooser metadata â€” Paseo shows them in the profile list
+    and returns them to callers of its `list_profiles` tool â€” and a profile carries
+    no system prompt because Paseo's session `systemPrompt` is creation-only and
+    would silently do nothing when applied to a running agent. So sync writes an
+    agent definition, `~/.config/opencode-room/seats/<provider>/agents/build.md`,
+    whose body is the seat's prompt (role contract plus shared protocol), and the
+    overlay points `OPENCODE_CONFIG_DIR` at that directory. OpenCode discovers the
+    definition when the seat's server starts, so the seat begins with the authority
+    boundary it was dispatched under.
+  * the removal of OpenCode's own child agents, because Paseo owns the
+    Supervisor/Lead/Peer topology: a seat that could launch unmanaged children
+    would bypass the reporting and ownership contract. `OPENCODE_CONFIG_CONTENT`
+    denies the `subagent` permission and drops the built-in `general`/`explore`
+    agents from that seat's catalog; only the three derived entries carry that
+    policy, so the base `opencode` provider keeps native subagents and the
+    operator's own OpenCode work is unaffected.
 
 sync also pins the base `opencode` provider entry's `enabled` flag and its
 `command` override to the real OpenCode executable: npm installs put an
@@ -36,7 +48,7 @@ restarted by this repository.
 Subcommands:
   sync        upsert the provider entry, the derived providers, and the three
               room profiles into the Paseo config, install the shared workspace
-              protocol, reload the daemon.
+              protocol and the three seat agent definitions, reload the daemon.
   verify      read-only checks of the repo sources and the installed state.
   uninstall   remove exactly the artifacts sync manages.
 
@@ -64,6 +76,7 @@ ROLES_DIR = REPO_ROOT / "roles"
 PROTOCOL_PATH = REPO_ROOT / "workflow" / "WORKSPACE_PROTOCOL.md"
 
 PROTOCOL_INSTALL_SUBPATH = Path(".config") / "opencode-room" / "workflow" / "WORKSPACE_PROTOCOL.md"
+SEAT_INSTALL_SUBPATH = Path(".config") / "opencode-room" / "seats"
 PROFILE_ID_PREFIX = "agent_profile_"
 BACKUP_DIRNAME = ".opencode-room-backups"
 MANAGED_PROFILE_KEYS = ("provider", "model", "modeId", "thinkingOptionId", "featureValues", "notes")
@@ -80,7 +93,7 @@ SHIM_TARGET_PATTERN = re.compile(r'"([^"\n]*node_modules[^"\n]*opencode\.exe)"')
 # Disabling OpenCode's native child agents for the room seats. Paseo owns the
 # Supervisor/Lead/Peer topology, so a seat must not be able to spawn an agent of
 # its own: an unmanaged child would sit outside the dispatch, ownership, and
-# reporting contract. `permissions` is the enforcement layer — a configured deny
+# reporting contract. `permissions` is the enforcement layer â€” a configured deny
 # cannot be approved away, and OpenCode filters any denied agent out of the
 # `subagent` tool's catalog. `agents` removes the built-in `general`/`explore`
 # subagents from the seat's catalog as well, so the capability is absent rather
@@ -97,6 +110,37 @@ NATIVE_AGENT_POLICY = {
 # config documents, so the seat's permissions gain the deny rule and its agent
 # catalog loses the built-in subagents. The user's own config files are untouched.
 NATIVE_AGENT_ENV_KEY = "OPENCODE_CONFIG_CONTENT"
+# How a seat gets its role contract. No Paseo layer delivers a prompt to an agent
+# â€” an agent profile's `notes` are chooser metadata, and Paseo's session
+# `systemPrompt` is creation-only â€” so the role travels through the seat's own
+# OpenCode server instead. The one channel that reaches an agent's context per
+# seat, verified on OpenCode 2.0.29, is an agent definition discovered from the
+# directory this variable names: sync writes `agents/build.md` there, whose body
+# *is* the seat's prompt (the role contract plus the shared protocol). Config
+# documents and `instructions` entries from OPENCODE_CONFIG_CONTENT are read at
+# the config layer but never reach the model, so they are not used for this.
+SEAT_AGENT_ENV_KEY = "OPENCODE_CONFIG_DIR"
+SEAT_AGENT_RELPATH = Path("agents") / "build.md"
+# The seat's prompt replaces OpenCode's built-in agent prompt, so it carries its
+# own working note before the contract the room owns.
+SEAT_PROMPT_TEMPLATE = (
+    "{role_prompt}\n"
+    "\n"
+    "This is the role contract your seat starts with; the room's shared\n"
+    "coordination contract follows it. Work with the tools you have, keep updates\n"
+    "concise and evidence-based, and treat work you did not write as someone\n"
+    "else's.\n"
+    "\n"
+    "# Shared coordination contract\n"
+    "\n"
+    "{protocol}\n"
+)
+SEAT_AGENT_FRONTMATTER = (
+    "---\n"
+    "description: {description}\n"
+    "mode: primary\n"
+    "---\n"
+)
 
 
 class RoomError(Exception):
@@ -154,24 +198,90 @@ def native_agents_enabled(spec: dict) -> bool:
     return spec.get("nativeAgents") is not False
 
 
-def native_agent_env() -> dict[str, str]:
-    """The `env` overlay that removes OpenCode's native child agents from a seat."""
-    return {NATIVE_AGENT_ENV_KEY: json.dumps(NATIVE_AGENT_POLICY)}
+def installed_seat_dir(home: Path, provider_id: str) -> Path:
+    return home / SEAT_INSTALL_SUBPATH / provider_id
 
 
-def render_providers(spec: dict) -> dict[str, dict]:
+def installed_seat_agent_path(home: Path, provider_id: str) -> Path:
+    return installed_seat_dir(home, provider_id) / SEAT_AGENT_RELPATH
+
+
+def seat_agent_markdown(spec: dict, role: str) -> str:
+    """The `agents/build.md` body that gives one seat its role contract.
+
+    OpenCode discovers an agent definition from the directory the seat's
+    `OPENCODE_CONFIG_DIR` names, and that definition's body becomes the agent's
+    prompt. It therefore carries the role prompt and the shared protocol, which
+    is the only per-seat prompt delivery Paseo leaves open.
+    """
+    label = role.capitalize()
+    return SEAT_AGENT_FRONTMATTER.format(
+        description=f"{label} seat of the OpenCode room (Supervisor / Lead / Peer)"
+    ) + SEAT_PROMPT_TEMPLATE.format(
+        role_prompt=role_notes(role),
+        protocol=protocol_text(),
+    )
+
+
+def protocol_text() -> str:
+    try:
+        text = PROTOCOL_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise RoomError(f"missing shared protocol: {PROTOCOL_PATH}")
+    text = text.replace("\r\n", "\n").strip("\n")
+    if not text.strip():
+        raise RoomError(f"shared protocol is empty: {PROTOCOL_PATH}")
+    return text
+
+
+def role_for_provider(spec: dict) -> dict[str, str]:
+    """Map each declared role provider id to the role profile bound to it."""
+    roles: dict[str, str] = {}
+    for entry in spec.get("agentProfiles", []):
+        if not isinstance(entry, dict):
+            continue
+        provider = entry.get("providerId", spec.get("providerId"))
+        role = entry.get("role")
+        if isinstance(provider, str) and isinstance(role, str) and provider not in roles:
+            roles[provider] = role
+    return roles
+
+
+def seat_env_overlay(spec: dict, home: Path, provider_id: str) -> dict[str, str]:
+    """The `env` overlay Paseo merges into one seat's OpenCode server.
+
+    Two independent jobs share the overlay: delivering the seat's role contract
+    through the agent definition OpenCode finds in that seat's config directory,
+    and â€” unless the spec asks to keep them â€” removing OpenCode's native child
+    agents from the same server.
+    """
+    overlay = {SEAT_AGENT_ENV_KEY: installed_seat_dir(home, provider_id).as_posix()}
+    if not native_agents_enabled(spec):
+        overlay[NATIVE_AGENT_ENV_KEY] = json.dumps(NATIVE_AGENT_POLICY)
+    return overlay
+
+
+def render_seat_agents(spec: dict) -> dict[str, str]:
+    """Render the `agents/build.md` body for every seat, keyed by provider id."""
+    roles = role_for_provider(spec)
+    declared = [entry["id"] for entry in spec.get("providers", []) if isinstance(entry, dict)]
+    return {pid: seat_agent_markdown(spec, roles[pid]) for pid in declared if pid in roles}
+
+
+def render_providers(spec: dict, home: Path) -> dict[str, dict]:
     """Build the desired `agents.providers` entries for the derived role providers.
 
     Paseo derives a provider from another provider when the entry declares
     `extends`; only a provider extending the bare `acp` protocol may pin its own
-    `command`, so a derived provider inherits the base entry's launch — the one
+    `command`, so a derived provider inherits the base entry's launch â€” the one
     place where sync pins the real OpenCode executable. `models` replaces that
     provider's discovered catalog, so each role provider offers exactly the
     role's model, with the role's thinking effort marked as its default.
 
-    Each derived entry also carries the native-agent `env` overlay unless the
-    spec asks to keep them, so the seats lose OpenCode's child agents while the
-    base `opencode` provider keeps them.
+    Each derived entry also carries the `env` overlay: the seat's config directory
+    (which delivers its role contract) plus the native-agent policy unless the
+    spec asks to keep OpenCode's child agents. `home` resolves that directory for
+    the machine that sync is writing for.
     """
     providers: dict[str, dict] = {}
     for entry in spec.get("providers", []):
@@ -182,8 +292,7 @@ def render_providers(spec: dict) -> dict[str, dict]:
         }
         if entry.get("description"):
             provider["description"] = entry["description"]
-        if not native_agents_enabled(spec):
-            provider["env"] = native_agent_env()
+        provider["env"] = seat_env_overlay(spec, home, entry["id"])
         providers[entry["id"]] = provider
     return providers
 
@@ -193,7 +302,9 @@ def validate_spec(spec: dict) -> list[str]:
 
     Paseo accepts a role provider only if its id is one it can derive, and a
     profile only launches if it names a provider that exists, so a malformed
-    spec must fail before sync writes anything.
+    spec must fail before sync writes anything. Each derived provider is one
+    seat, so exactly one profile must bind it: that binding is what names the
+    role prompt the seat receives.
     """
     problems: list[str] = []
     base_provider_id = spec.get("providerId")
@@ -228,6 +339,7 @@ def validate_spec(spec: dict) -> list[str]:
         problems.extend(validate_models(entry.get("models"), where))
     seen_roles: set[str] = set()
     seen_names: set[str] = set()
+    bound: dict[str, str] = {}
     for index, entry in enumerate(spec.get("agentProfiles", [])):
         where = f"agentProfiles[{index}]"
         if not isinstance(entry, dict):
@@ -250,6 +362,18 @@ def validate_spec(spec: dict) -> list[str]:
         provider = entry.get("providerId", base_provider_id)
         if provider not in declared and provider != base_provider_id:
             problems.append(f"{where}.providerId {provider!r} is not a declared provider")
+        elif provider in declared:
+            if provider in bound:
+                problems.append(
+                    f"{where}.providerId {provider!r} is already bound by profile {bound[provider]!r}; "
+                    "one seat receives one role prompt"
+                )
+            else:
+                bound[provider] = str(name or where)
+    for provider_id in sorted(declared - set(bound)):
+        problems.append(
+            f"providers entry {provider_id!r} is bound by no agent profile, so its seat would receive no role prompt"
+        )
     return problems
 
 
@@ -380,19 +504,19 @@ def merge_provider(config: dict, spec: dict) -> bool:
     return True
 
 
-def merge_providers(config: dict, spec: dict) -> bool:
+def merge_providers(config: dict, spec: dict, home: Path) -> bool:
     """Upsert the derived role providers; preserve every other provider entry.
 
     Each derived entry is wholly owned by the spec, so a managed key the desired
-    entry does not carry is dropped — including the native-agent `env` overlay
-    when the spec asks to keep native agents. Unrelated keys an operator added by
-    hand (for example `enabled`, `order`, or `paseoTools`) survive.
+    entry does not carry is dropped â€” for example the native-agent policy when the
+    spec asks to keep native agents. Unrelated keys an operator added by hand (for
+    example `enabled`, `order`, or `paseoTools`) survive.
     """
     providers = config.setdefault("agents", {}).setdefault("providers", {})
     if not isinstance(providers, dict):
         raise RoomError("agents.providers in the Paseo config is not an object")
     changed = False
-    for provider_id, want in render_providers(spec).items():
+    for provider_id, want in render_providers(spec, home).items():
         current = providers.get(provider_id)
         if current is None:
             providers[provider_id] = want
@@ -533,6 +657,47 @@ def remove_protocol(home: Path) -> bool:
     return False
 
 
+def install_seat_agents(home: Path, spec: dict) -> bool:
+    """Write each seat's `agents/build.md`, the file that carries its role prompt.
+
+    The seat's OpenCode server is launched with `OPENCODE_CONFIG_DIR` pointing at
+    this directory, so the installed copy â€” not this repository's checkout â€” is
+    what the seat reads at server start.
+    """
+    changed = False
+    for provider_id, text in render_seat_agents(spec).items():
+        dst = installed_seat_agent_path(home, provider_id)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.exists() and dst.read_text(encoding="utf-8") == text:
+            continue
+        dst.write_text(text, encoding="utf-8", newline="\n")
+        changed = True
+    return changed
+
+
+def remove_seat_agents(home: Path, spec: dict) -> list[str]:
+    """Remove the installed seat agent definitions; return the providers removed."""
+    removed: list[str] = []
+    for provider_id in render_seat_agents(spec):
+        dst = installed_seat_agent_path(home, provider_id)
+        if dst.exists():
+            dst.unlink()
+            removed.append(provider_id)
+        seat_dir = installed_seat_dir(home, provider_id)
+        for parent in (dst.parent, seat_dir):
+            try:
+                parent.rmdir()
+            except OSError:
+                pass
+    if removed:
+        seats_dir = home / SEAT_INSTALL_SUBPATH
+        try:
+            seats_dir.rmdir()
+        except OSError:
+            pass
+    return removed
+
+
 def daemon_reload(home: Path) -> str:
     """Ask a running daemon to reload config.json; never restart anything."""
     paseo = shutil.which("paseo")
@@ -600,7 +765,7 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
         for key in PROVIDER_MANAGED_KEYS:
             if current_provider.get(key) != desired_provider.get(key):
                 problems.append(f"provider '{provider_id}' differs on '{key}'; run sync")
-    for derived_id, want in render_providers(spec).items():
+    for derived_id, want in render_providers(spec, home).items():
         current = providers.get(derived_id)
         if current is None:
             problems.append(f"derived provider '{derived_id}' missing from ~/.paseo/config.json; run sync")
@@ -631,6 +796,12 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
         encoding="utf-8"
     ).replace("\r\n", "\n"):
         problems.append(f"installed protocol differs from {PROTOCOL_PATH}; run sync")
+    for provider_id, want in render_seat_agents(spec).items():
+        installed = installed_seat_agent_path(home, provider_id)
+        if not installed.exists():
+            problems.append(f"seat agent definition missing at {installed}; run sync")
+        elif installed.read_text(encoding="utf-8").replace("\r\n", "\n") != want:
+            problems.append(f"installed seat agent definition for '{provider_id}' differs; run sync")
     return problems
 
 
@@ -641,13 +812,20 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if problems:
         raise RoomError("invalid room spec:\n  - " + "\n  - ".join(problems))
     desired = render_profiles(spec)
-    derived = render_providers(spec)
+    derived = render_providers(spec, home)
     config = read_config(home)
     provider_added = merge_provider(config, spec)
-    providers_changed = merge_providers(config, spec)
+    providers_changed = merge_providers(config, spec, home)
     profiles_changed = merge_profiles(config, desired)
     protocol_changed = install_protocol(home)
-    if not (provider_added or providers_changed or profiles_changed or protocol_changed):
+    seat_agents_changed = install_seat_agents(home, spec)
+    if not (
+        provider_added
+        or providers_changed
+        or profiles_changed
+        or protocol_changed
+        or seat_agents_changed
+    ):
         print("already in sync; nothing to do")
         reload_note = daemon_reload(home)
         if reload_note:
@@ -662,6 +840,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     print(f"derived providers ({len(derived)}): {'updated' if providers_changed else 'present (unchanged)'}")
     print(f"agent profiles: {'updated' if profiles_changed else 'present (unchanged)'}")
     print(f"shared protocol: {'installed' if protocol_changed else 'present (unchanged)'}")
+    print(f"seat agent definitions: {'installed' if seat_agents_changed else 'present (unchanged)'}")
     reload_note = daemon_reload(home)
     if reload_note:
         print(f"note: {reload_note}")
@@ -705,7 +884,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     if problems:
         raise RoomError("invalid room spec:\n  - " + "\n  - ".join(problems))
     names = [entry["name"] for entry in spec["agentProfiles"]]
-    derived_ids = list(render_providers(spec))
+    derived_ids = list(render_providers(spec, home))
     config = read_config(home)
     profiles_removed = unmerge_profiles(config, names)
     derived_removed = unmerge_providers(config, derived_ids)
@@ -715,7 +894,14 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         if providers.pop(spec["providerId"], None) is not None:
             provider_removed = True
     protocol_removed = remove_protocol(home)
-    if not (profiles_removed or derived_removed or provider_removed or protocol_removed):
+    seat_agents_removed = remove_seat_agents(home, spec)
+    if not (
+        profiles_removed
+        or derived_removed
+        or provider_removed
+        or protocol_removed
+        or seat_agents_removed
+    ):
         print("nothing managed by this room is installed")
         return 0
     backup = backup_config(home)
@@ -730,6 +916,8 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         print(f"removed provider '{spec['providerId']}'")
     if protocol_removed:
         print(f"removed {home / PROTOCOL_INSTALL_SUBPATH}")
+    if seat_agents_removed:
+        print(f"removed installed seat agent definitions: {', '.join(seat_agents_removed)}")
     reload_note = daemon_reload(home)
     if reload_note:
         print(f"note: {reload_note}")

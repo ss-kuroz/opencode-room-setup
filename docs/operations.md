@@ -7,22 +7,33 @@
    provider: id, label, model catalog).
 2. Run `make test` and `python scripts/room.py verify --source`.
 3. Run `python scripts/room.py sync` and check the post-sync verification.
-4. Existing sessions keep their original instructions; create a new session
+4. Existing sessions keep the prompt they started with; create a new session
    with the profile to exercise the change.
 
-A role is two entries in `~/.paseo/config.json`: a derived provider
-(`extends: opencode`) that makes the seat visible in Paseo's provider list with
-its model and thinking effort as the default, and an agent profile that carries
-the role prompt, `build` mode, and auto-accept. Edit the profile's `providerId`
-and the provider's `models` array together when you change a role's model; a
-derived provider's `models` array replaces the catalog Paseo discovered from
-OpenCode, so it must list every model and thinking option that seat should
-offer.
+A role is three things after sync: a derived provider (`extends: opencode`) that
+makes the seat visible in Paseo's provider list with its model and thinking effort
+as the default, an agent profile that carries `build` mode, auto-accept, and the
+pinned model + thinking, and the seat prompt at
+`~/.config/opencode-room/seats/<provider>/agents/build.md` — the role contract plus
+the shared protocol — which the provider's `env.OPENCODE_CONFIG_DIR` points at. Edit
+the profile's `providerId` and the provider's `models` array together when you change
+a role's model; a derived provider's `models` array replaces the catalog Paseo
+discovered from OpenCode, so it must list every model and thinking option that seat
+should offer.
+
+The profile's `notes` hold the same role prompt, but they are chooser metadata —
+Paseo shows them in its profile list and returns them to callers of its
+`list_profiles` tool. They are not a system prompt, and no Paseo layer delivers a
+per-role prompt to an agent: that is what the seat's own config directory is for, and
+why `sync` writes and re-checks the seat prompt.
 
 Each derived provider also carries the native-agent overlay that takes OpenCode's
-child agents away from the seat (`nativeAgents: false` in `config/room.json`).
-It is a managed key like `models`, so sync re-renders it and `verify` reports a
-seat that lost it; the base `opencode` provider keeps native subagents.
+child agents away from the seat (`nativeAgents: false` in `config/room.json`), in the
+`OPENCODE_CONFIG_CONTENT` half of the same `env`. That half is a managed key like
+`models`, so sync re-renders it and `verify` reports a seat that lost it; the
+`OPENCODE_CONFIG_DIR` half is what makes a seat start with its contract, and `verify`
+reports that too. The base `opencode` provider keeps native subagents and its own
+prompt.
 
 The three roles have distinct authority. Human keeps product, cost, external
 effect, and irreversible-risk decisions. Supervisor observes and routes Human
@@ -74,10 +85,16 @@ disposition.
 ## Supervision and attention
 
 Assign a new Supervisor a named project to begin monitoring. It first reads the
-current Lead, decisions, and local contract without sending an onboarding
-message to Lead. Private conversations remain private; Lead receives only a
-needed project decision or an evidence-based open question about actual drift.
-Healthy work does not require periodic Lead reports.
+current Lead, decisions, and local contract without sending an onboarding message
+to Lead. A seat created from a room profile starts with its role contract and the
+shared protocol in its prompt — the room writes both into the seat's
+`agents/build.md`, which its OpenCode server loads — so a Supervisor session that
+behaves as if it has no role is a session created before that file existed or with a
+missing overlay: see
+[troubleshooting](troubleshooting.md#a-seat-does-not-know-its-own-role).
+Private conversations remain private; Lead receives only a needed project decision
+or an evidence-based open question about actual drift. Healthy work does not
+require periodic Lead reports.
 
 The Supervisor uses events and one self-targeted Paseo heartbeat every two
 minutes where event coverage is incomplete. It checks existing schedules to
@@ -167,10 +184,13 @@ Peer.
 
 The Paseo Desktop UI can edit or delete room profiles or derived role providers.
 `python scripts/room.py verify` reports exactly which field of which profile or
-provider drifted — including a derived provider that lost its `env` overlay and
-so regained OpenCode's native child agents — `python scripts/room.py sync`
-restores it without disturbing unrelated profiles or providers. Config backups
-from every sync live under `~/.opencode-room-backups/`.
+provider drifted — including a derived provider that lost its `env` overlay and so
+lost its role prompt *and* regained OpenCode's native child agents —
+`python scripts/room.py sync` restores it without disturbing unrelated profiles or
+providers. Config backups from every sync live under `~/.opencode-room-backups/`.
+`verify` also compares the installed `seats/<provider>/agents/build.md` and
+`WORKSPACE_PROTOCOL.md` against this repository, and reports a gap it cannot fix: a
+running seat keeps whatever prompt its OpenCode server was launched with.
 
 The overlay is process environment, not session state: it reaches a seat when
 Paseo launches that provider's OpenCode server, so after a repair create a new

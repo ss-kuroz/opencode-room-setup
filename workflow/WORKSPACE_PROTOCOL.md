@@ -4,11 +4,12 @@ This is the small shared contract for an OpenCode room workspace. Human
 instructions and owner decisions remain authoritative. A repository may add
 project-local detail, but cannot change role authority or safety boundaries.
 
-All roles read this shared contract from
-`~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md` before project work, then
-read `docs/WORKSPACE_PROTOCOL.md` relative to the actual target project when
-present. The local document supplements this contract. Report a missing or
-unreadable shared contract rather than silently assuming it was loaded.
+Every room seat receives this shared contract together with its own role
+contract when its OpenCode server starts; the contract is installed at
+`~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`, and the seat's prompt
+names that path too. Read `docs/WORKSPACE_PROTOCOL.md` relative to the actual
+target project when present; the local document supplements this contract. A seat
+that starts without a role contract reports the gap rather than acting without one.
 
 ## Authority
 

@@ -12,39 +12,60 @@ Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
          mỗi vai trò là một provider dẫn xuất ("extends": "opencode", label riêng),
          catalog model của nó chỉ gồm model của vai trò đó, và thinking effort của
          vai trò được đánh dấu là default ở cấp provider
+         mỗi entry còn mang `env`: `OPENCODE_CONFIG_DIR` trỏ vào thư mục config
+         của ghế (nơi có prompt vai trò), cộng policy tắt agent con của OpenCode
+         trong `OPENCODE_CONFIG_CONTENT`
     -> daemon.agentProfiles "opencode-supervisor | opencode-lead | opencode-peer"
          mỗi vai trò một profile, trỏ vào provider dẫn xuất tương ứng: mode build,
-         auto_accept, và prompt vai trò lấy từ roles/<role>.md
+         auto_accept, model + thinking đã ghim, và prompt vai trò ở `notes`
+         (notes là metadata để chọn profile, không phải system prompt)
     -> opencode (ACP server có sẵn trong OpenCode CLI, không cần adapter)
     -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash /
        deepseek-v4-pro / deepseek-v4.1-flash, kèm thinking effort low / max / low
-    -> hợp đồng chung: ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
+    -> file do sync cài, dùng để dựng prompt cho từng ghế:
+         ~/.config/opencode-room/seats/<provider>/agents/build.md
+         ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
 Repo không cài Paseo, OpenCode, hay Ollama. Nó chỉ sở hữu ba thứ: các mục
 provider trong `~/.paseo/config.json` (provider gốc `opencode` mà sync ghim
 `enabled: true` và `command` override trỏ vào exe thật, cộng ba provider dẫn
-xuất cho ba vai trò) và ba agent profile, file hợp đồng chung ở
-`~/.config/opencode-room/workflow/`, và backup config ở
+xuất cho ba vai trò) và ba agent profile, các file ở `~/.config/opencode-room/`
+(hợp đồng chung và prompt của từng ghế), và backup config ở
 `~/.opencode-room-backups/`. Toàn bộ phần còn lại của `~/.paseo/config.json`
 (listen, plugins, provider khác, profile khác) được giữ nguyên, không đụng tới.
 
 Phòng được công bố thành hai tầng vì Paseo tách hai việc: **provider** giữ thứ
 người vận hành chọn trước khi đặt tên cho agent (model, và thinking effort của
-model đó), còn **agent profile** là tầng duy nhất có `notes` — nơi chứa prompt
-vai trò — cùng `modeId` và `auto_accept`. Provider không mang được prompt hay
-auto-accept, nên ba provider dẫn xuất không thay thế profile; cả hai tầng mới là
-phòng. Nhờ tầng provider, danh sách provider của Paseo có `OpenCode - Supervisor
-/ Lead / Peer`, mỗi mục đã mặc định sẵn model và thinking effort của vai trò.
+model đó), còn **agent profile** giữ `modeId`, `auto_accept`, và model + thinking
+đã ghim. Provider không mang được mấy thứ đó, nên ba provider dẫn xuất không thay
+thế profile; cả hai tầng mới là phòng. Nhờ tầng provider, danh sách provider của
+Paseo có `OpenCode - Supervisor / Lead / Peer`, mỗi mục đã mặc định sẵn model và
+thinking effort của vai trò.
 
-Ba provider dẫn xuất còn mang thêm một overlay `env`
-(`OPENCODE_CONFIG_CONTENT`) mà Paseo trộn vào server OpenCode của chính ghế đó:
-overlay này **tắt multi-agent của OpenCode** trong ghế — deny quyền `subagent`
-và gỡ hai agent con built-in `general` / `explore` khỏi catalog, nên ghế không
-còn tool gọi agent con nào cả. Lý do: Paseo sở hữu topology Supervisor/Lead/Peer,
-một agent con do ghế tự sinh sẽ nằm ngoài hợp đồng dispatch / ownership / báo
-cáo. Provider gốc `opencode` **không** bị đụng tới, nên phần việc OpenCode riêng
-của bạn vẫn giữ nguyên multi-agent.
+Không tầng nào tự đưa prompt vào context của agent: `notes` của profile chỉ là
+metadata để chọn profile (Paseo hiện nó trong danh sách profile và trả lại cho ai
+gọi tool `list_profiles`), và profile cố ý không mang system prompt — system
+prompt của Paseo chỉ áp lúc tạo session, nên một profile mang prompt sẽ chạy với
+agent mới nhưng im lặng vô hiệu khi áp vào agent đang chạy. Vì vậy sync dựng prompt
+của ghế tại `~/.config/opencode-room/seats/<provider>/agents/build.md` (prompt vai
+trò + hợp đồng chung) rồi trỏ `OPENCODE_CONFIG_DIR` của provider vào thư mục đó —
+OpenCode đọc agent definition trong thư mục này khi server của ghế khởi động, và
+thân file markdown đó **chính là** prompt của ghế. Đây là đường duy nhất theo từng
+ghế đi vào context của agent: hai cách lân cận **không** hoạt động trên OpenCode
+2.0.29 (list `instructions` trong config inline hay trong file `OPENCODE_CONFIG`,
+và `agents.build.prompt` trong config document) nên room không dùng. Một ghế mất
+overlay (hoặc mất file prompt) là mất luôn vai: nó chạy như agent OpenCode bình
+thường, không biết mình là Supervisor, Lead, hay Peer — và sẽ tự làm việc được giao
+thay vì dispatch.
+
+Ba provider dẫn xuất còn mang thêm policy **tắt multi-agent của OpenCode** trong
+`OPENCODE_CONFIG_CONTENT` của cùng overlay `env`: deny quyền `subagent` và gỡ hai
+agent con built-in `general` / `explore` khỏi catalog, nên ghế không còn tool gọi
+agent con nào cả. Lý do: Paseo sở hữu topology Supervisor/Lead/Peer, một agent con
+do ghế tự sinh sẽ nằm ngoài hợp đồng dispatch / ownership / báo cáo. Provider gốc
+`opencode` **không** bị đụng tới, nên phần việc OpenCode riêng của bạn vẫn giữ
+nguyên multi-agent và prompt riêng của bạn.
 
 ## Ranh giới trách nhiệm
 
@@ -73,7 +94,7 @@ CLI v2.0.29+ nằm trên PATH (`opencode --version`) và đã đăng nhập Olla
 (`paseo provider diagnostic opencode` thấy API key), Python 3.11+.
 
 ```bash
-python scripts/room.py sync        # publish provider + profiles + protocol, reload daemon
+python scripts/room.py sync        # publish provider + profiles + protocol + seat prompts, reload daemon
 python scripts/room.py verify      # kiểm tra source lẫn installed (read-only)
 python scripts/room.py verify --source   # chỉ kiểm tra source, không đụng HOME
 python scripts/room.py uninstall   # gỡ đúng những gì sync quản lý
@@ -145,7 +166,11 @@ cho Peer.
 
 ## Sửa ở đâu?
 
-- Đổi prompt hoặc authority của role: sửa `roles/<role>.md`.
+- Đổi prompt hoặc authority của role: sửa `roles/<role>.md`. `sync` dựng lại
+  prompt của ghế tại `~/.config/opencode-room/seats/<provider>/agents/build.md`
+  (đường dẫn mà `OPENCODE_CONFIG_DIR` của provider trỏ tới) và cập nhật `notes`
+  trong profile — nhưng **session đang chạy giữ nguyên prompt lúc nó khởi động**,
+  nên phải tạo agent mới để thấy thay đổi.
 - Đổi model, thinking effort, mode, auto-accept, tên profile, và provider dẫn
   xuất của vai trò (id, label, catalog model): sửa `config/room.json`. Mảng
   `models` của provider dẫn xuất **thay thế** catalog mà Paseo dò được từ
@@ -158,9 +183,12 @@ cho Peer.
   kế thừa launch này nên đường dẫn exe chỉ được ghi ở một chỗ.
 - Bật/tắt multi-agent của OpenCode cho ba ghế: mục `nativeAgents` trong
   `config/room.json` (`false` = tắt, giá trị đang dùng). Khi tắt, sync render
-  overlay `env.OPENCODE_CONFIG_CONTENT` vào từng provider dẫn xuất; `verify` coi
-  `env` là managed key nên báo drift nếu ghế mất overlay. Provider gốc không bao
-  giờ nhận overlay này.
+  policy deny `subagent` + disable `general`/`explore` vào
+  `OPENCODE_CONFIG_CONTENT` của từng provider dẫn xuất. Nửa còn lại của overlay —
+  `OPENCODE_CONFIG_DIR` trỏ vào thư mục prompt của ghế — **luôn** có, vì đó là cách
+  ghế nhận vai. `verify` coi cả `env` là managed key nên báo drift nếu ghế mất
+  overlay, và báo cả khi file prompt của ghế bị thiếu/sửa tay. Provider gốc không
+  bao giờ nhận overlay này.
 - Đổi nguyên tắc phối hợp chung: sửa `workflow/WORKSPACE_PROTOCOL.md`.
 - Đổi logic merge/render: sửa `scripts/room.py` và test boundary tương ứng
   trong `tests/test_room.py`.

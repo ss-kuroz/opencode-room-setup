@@ -9,8 +9,10 @@
     "opencode-supervisor"  extends opencode / deepseek-v4.1-flash (default) / thinking low  (default)
     "opencode-lead"        extends opencode / deepseek-v4-pro     (default) / thinking max  (default)
     "opencode-peer"        extends opencode / deepseek-v4.1-flash (default) / thinking low  (default)
-                           each derived entry also carries env.OPENCODE_CONFIG_CONTENT, which
-                           removes OpenCode's native child agents from that seat
+                           each derived entry also carries env:
+                             OPENCODE_CONFIG_DIR -> that seat's config directory,
+                               whose agents/build.md is the seat's prompt
+                             OPENCODE_CONFIG_CONTENT -> native-agent policy
   daemon.agentProfiles[]                 (managed by scripts/room.py sync)
     "opencode-supervisor"  provider opencode-supervisor / deepseek-v4.1-flash / thinking low  / build / auto_accept
     "opencode-lead"        provider opencode-lead       / deepseek-v4-pro     / thinking max  / build / auto_accept
@@ -20,9 +22,9 @@
 opencode (Paseo built-in provider -> OpenCode CLI ACP server)
   -> model + thinking effort from the profile, resolved against the
      operator's OpenCode config (Ollama Cloud provider, authenticated)
-      |
-      v
-~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md   (installed by sync)
+  -> files installed by sync, which build that seat's prompt:
+       ~/.config/opencode-room/seats/<provider>/agents/build.md
+       ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
 ```
 
 There is no generated runtime. Paseo gives each agent its own session, and
@@ -48,24 +50,69 @@ answer — without taking over the project's technical decisions.
 ## Why two layers
 
 Paseo keeps launch defaults and instructions in different places, and only one
-of them can hold the role prompt:
+of them can carry the launch-time choices:
 
 | Layer | Carries | Cannot carry |
 | --- | --- | --- |
-| `agents.providers.<role>` | the provider the operator picks, its label, its model catalog, and the model's default thinking effort | a role prompt; an auto-accept flag; a default mode |
-| `daemon.agentProfiles.<role>` | the role prompt (`notes`), `modeId`, `auto_accept`, and the pinned model + thinking | — |
+| `agents.providers.<role>` | the provider the operator picks, its label, its model catalog, the model's default thinking effort, and the `env` overlay that reaches that seat's OpenCode server | an auto-accept flag; a default mode |
+| `daemon.agentProfiles.<role>` | `modeId`, `auto_accept`, the pinned model + thinking, and `notes` | a system prompt — Paseo's profiles deliberately carry none |
+| `~/.config/opencode-room/seats/<provider>/agents/build.md` | the seat's prompt: its role contract and the shared protocol | — |
 
 So the derived provider exists to make the three seats visible and correctly
 defaulted in Paseo's provider list, and the profile exists because it is the
-only Paseo object that can carry `roles/<role>.md`. `modeId` is not settable on
-a provider at all: for `opencode` it selects an agent *inside* OpenCode, which
-the operator can rename or delete at will, so Paseo refuses to hardcode one.
+only Paseo object that can pin `modeId` and auto-accept. `modeId` is not
+settable on a provider at all: for `opencode` it selects an agent *inside*
+OpenCode, which the operator can rename or delete at will, so Paseo refuses to
+hardcode one.
 
 Paseo's rule for a derived provider (`extends` other than `acp`): the entry must
 declare `label`, it inherits the base provider's launch settings, and a
 non-empty `models` array replaces the catalog discovered from the provider.
 That is why the role providers never declare `command` themselves — the base
 `opencode` entry owns the resolved executable path.
+
+## How a seat gets its role
+
+`notes` is not the role prompt. Paseo defines it as free text that is *surfaced
+to orchestrating agents by its `list_profiles` tool* — it appears in the Desktop
+profile list and in that tool's output, and the CLI materializes a profile as
+provider + model + mode + thinking + feature values, never as a prompt. A
+profile carries no system prompt by design: `AgentSessionConfig.systemPrompt` is
+creation-only, so a profile holding one would apply when starting a new agent and
+silently do nothing when applied to a running one. A provider override has no
+prompt field either — its schema is `extends`, `label`, `description`, `command`,
+`env`, `options`, `params`, `models`, `additionalModels`, `disallowedTools`,
+`paseoTools`, `enabled`, `order`.
+
+The per-seat channel Paseo leaves open is the seat's own process environment:
+it merges a provider entry's `env` into the OpenCode server it launches for that
+provider. The room uses `OPENCODE_CONFIG_DIR` for the role contract, because that
+directory is where OpenCode discovers agent definitions, and a discovered
+`agents/build.md` *is* the prompt of the agent the seat's `modeId` selects:
+
+- sync renders the seat's role prompt (`roles/<role>.md`) and the shared protocol
+  into `~/.config/opencode-room/seats/<provider>/agents/build.md`, in that order,
+  under a two-line note that the prompt is the seat's contract;
+- the derived provider's overlay points `OPENCODE_CONFIG_DIR` at that directory,
+  so the seat's server loads it when the agent starts.
+
+Two neighbouring ideas do not work on OpenCode 2.0.29 and were not used: an
+`instructions` list in `OPENCODE_CONFIG_CONTENT` (or in a file-based
+`OPENCODE_CONFIG` document) is accepted at the config layer and never reaches the
+model, and an `agents.build.prompt` override inside a config document is ignored —
+only the agent definition discovered from the config directory takes effect.
+
+Because a seat's prompt replaces OpenCode's built-in agent prompt, it carries its
+own short working note before the room's contract. The seat's `build` mode
+description in Paseo also changes to the seat's name, since Paseo reads the mode's
+description from the same definition.
+
+A seat whose overlay is missing has no role contract at all: it starts as a plain
+OpenCode `build` agent, does not know whether it is the Supervisor, the Lead, or a
+Peer, and will happily do a dispatched task itself. `verify` reports that drift on
+`env` and on the installed definition; `sync` restores both, and the seat must be
+created again, because the overlay is process environment for the OpenCode server,
+not session state.
 
 ## No native child agents in a seat
 
@@ -74,7 +121,7 @@ and each dispatch names its owner and return channel. An OpenCode child agent
 launched inside a seat would sit outside that contract: nobody assigned it,
 nothing reports it, and no one owns its writes. The three derived role providers
 therefore carry an `env` overlay that Paseo merges into that seat's OpenCode
-server:
+server (the same overlay that names the directory holding the seat's prompt):
 
 ```jsonc
 {
@@ -93,11 +140,12 @@ the seat has no child-agent tool at all. The operator's own
 provider entry carries no overlay — native subagents stay available everywhere
 except in the three seats.
 
-`config/room.json`'s `nativeAgents` flag is the switch: `false` (the shipped
-value) renders the overlay into every derived provider, `true` renders none and
-sync removes it from the installed entries. `verify` compares the overlay as a
-managed key, so a hand-edited or reset derived provider is reported as drift and
-restored by the next `sync`.
+`config/room.json`'s `nativeAgents` flag is the switch for that half: `false`
+(the shipped value) renders the policy into every derived provider, `true`
+renders it nowhere and sync drops it from the installed entries. The seat's role
+delivery is not optional — `OPENCODE_CONFIG_DIR` stays in the overlay either way.
+`verify` compares the whole overlay as a managed key, so a hand-edited or reset
+derived provider is reported as drift and restored by the next `sync`.
 
 ## Ownership
 
@@ -107,6 +155,7 @@ restored by the next `sync`.
 | `~/.paseo/config.json` room entries | `scripts/room.py sync` | Provider entry `opencode`, the three derived role providers, and the three `daemon.agentProfiles` |
 | Rest of `~/.paseo/config.json` | Operator / Paseo Desktop | Never rewritten by this repository |
 | `~/.config/opencode-room/workflow/` | This repository | The shared `WORKSPACE_PROTOCOL.md` |
+| `~/.config/opencode-room/seats/` | This repository | One installed seat prompt per role provider, named by that seat's overlay |
 | OpenCode CLI (`~/.config/opencode`, `~/.local/share/opencode`) | OpenCode | Ollama Cloud auth, sessions, plugins |
 | `roles/*.md`, `config/room.json`, `workflow/` | This repository | Role prompts, room spec, shared contract |
 
@@ -135,22 +184,28 @@ upserts them into `daemon.agentProfiles` **by name**:
   preserved.
 - The derived role providers are upserted by id the same way. Every key this
   repository renders (`extends`, `label`, `description`, `models`, `env`) is
-  room-owned, so a key the spec no longer carries is removed — including the
-  native-agent overlay when `nativeAgents` is `true`; unrelated keys an operator
+  room-owned, so a key the spec no longer carries is removed — for example the
+  native-agent policy when `nativeAgents` is `true`; unrelated keys an operator
   added by hand (`enabled`, `order`, `paseoTools`) survive. A derived provider id
   must match Paseo's `^[a-z][a-z0-9-]*$` and must not be one of Paseo's built-in
   ids — `verify --source` and `sync` both refuse a spec that breaks either rule,
-  or that binds a profile to a provider the spec never declares.
+  that binds a profile to a provider the spec never declares, that binds one seat
+  to two profiles, or that leaves a declared seat bound to no profile at all: a
+  seat's profile is what pairs it with the role prompt it receives.
 - The previous config is copied to `~/.opencode-room-backups/` before each
   write, and the write itself is atomic (temp file + replace).
+- The installed files (`workflow/WORKSPACE_PROTOCOL.md` and one
+  `seats/<provider>/agents/build.md` per seat) are refreshed from this repository
+  on every sync; `verify` reports a missing or hand-edited copy, and `uninstall`
+  removes exactly the files the spec declares.
 - After writing, sync asks a running daemon to `reload`; it never restarts the
   daemon or interrupts running agents.
 
-`verify` compares the installed state (config entries, installed protocol,
-`opencode` on PATH) against the rendered desired state and reports drift.
-`uninstall` removes exactly the three profiles by name, the three derived role
-providers, the installed protocol file, and (with `--purge-provider`) the base
-provider entry — nothing else.
+`verify` compares the installed state (config entries, installed protocol and seat
+prompt files, `opencode` on PATH) against the rendered desired state and reports
+drift. `uninstall` removes exactly the three profiles by name, the three derived
+role providers, the installed protocol and seat prompt files, and (with
+`--purge-provider`) the base provider entry — nothing else.
 
 ## Failure modes
 
@@ -173,12 +228,22 @@ provider entry — nothing else.
   integration: agents fail with "Request is not supported by this version of
   OpenCode Server (Server responded with text/html)". Re-run `sync` to
   repair the override.
-- If a derived provider loses its native-agent `env` overlay — a hand edit, a
-  Paseo reset, or a config restored from an older backup — that seat gets
-  OpenCode's native child agents back. `verify` names the entry and the `env`
-  key; `sync` restores it. The overlay is process env, so it reaches the seat
-  when Paseo launches that provider's OpenCode server, not retroactively into a
-  server already running.
+- A seat's role contract arrives through its derived provider's `env` overlay
+  (which directory holds its prompt) and the installed
+  `seats/<provider>/agents/build.md`. If either is lost — a hand edit, a Paseo
+  reset, or a config restored from an older backup — the seat starts as a plain
+  OpenCode agent with no role, and if the native-agent half of the overlay went with
+  it, with OpenCode's child agents back too. `verify` names the entry, the `env` key,
+  and the missing or hand-edited definition; `sync` restores all three. The overlay is
+  process environment, so it reaches the seat when Paseo launches that provider's
+  OpenCode server: a session already running keeps the prompt it started with, and a
+  session that never had one cannot acquire it retroactively — give that session its
+  role in a message or start a new agent.
+- A seat created from the bare provider entry instead of the profile, or before the
+  overlay existed, has no role prompt at all: Paseo never delivers a profile's `notes`
+  into an agent's context. `python scripts/room.py verify` cannot see a *running*
+  session's gap (the profile and the installed files are correct); check the session
+  itself — a Supervisor that does not know it is one will do the project work itself.
 - Model and thinking ids can drift when the OpenCode/Ollama catalog changes.
   `paseo provider models opencode` lists what Paseo can currently see; update
   `config/room.json` to match. A derived role provider shows only the models and
@@ -188,8 +253,12 @@ provider entry — nothing else.
 ## Role boundaries
 
 Role authority lives in `roles/*.md` and the shared coordination contract in
-`workflow/WORKSPACE_PROTOCOL.md`. Both are read by the agents at session
-start; the protocol file is referenced from every role prompt via its install
-path `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`. Changing a role
-means editing those files and re-running `sync`, then starting new sessions —
-existing sessions keep the instructions they were created with.
+`workflow/WORKSPACE_PROTOCOL.md`. `sync` renders both into each seat's
+`~/.config/opencode-room/seats/<provider>/agents/build.md`, which is the prompt that
+seat's OpenCode server loads — the repository files are what those installed copies
+are generated from, not what an agent reads directly. The protocol is also installed
+at `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`, the path every role
+prompt names, so a human or a seat can open the same text. Changing a role means
+editing those files and re-running `sync`, then starting new sessions: existing
+sessions keep the prompt they were created with, and the profiles' `notes` are
+refreshed for operators who read them in Paseo.

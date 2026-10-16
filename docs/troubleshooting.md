@@ -152,6 +152,51 @@ The same section of the protocol is the recovery path for a Lead that stalls
 because it is confused: it asks the Supervisor one bounded question about scope,
 priority, authority, or intent and keeps unrelated ready work moving.
 
+## A seat does not know its own role
+
+Symptom: an agent created from `opencode-supervisor`, `opencode-lead`, or
+`opencode-peer` behaves like a plain coding agent — the Supervisor does project
+work itself instead of routing it, a Lead edits files instead of dispatching a
+Peer, a Peer coordinates other agents.
+
+Cause: the profile's `notes` never reach an agent. Paseo defines them as free text
+"surfaced to orchestrating agents by the `list_profiles` tool": they show up in the
+Desktop profile list and in that tool's output, and a profile deliberately carries
+no system prompt, because Paseo's session `systemPrompt` is creation-only and would
+do nothing when applied to a running agent. The seat's contract therefore arrives as
+the agent definition its OpenCode server discovers: sync writes
+`~/.config/opencode-room/seats/<provider>/agents/build.md` (role contract plus shared
+protocol) and the derived provider's `env.OPENCODE_CONFIG_DIR` points at that
+directory. A session created before that file existed, or from the bare provider
+entry rather than the profile, has no role prompt at all.
+
+Two neighbouring mechanisms do not work on OpenCode 2.0.29, so the room does not use
+them: an `instructions` list (in `OPENCODE_CONFIG_CONTENT` or in a file-based
+`OPENCODE_CONFIG` document) is accepted at the config layer and never reaches the
+model, and an `agents.build.prompt` inside a config document is ignored — only the
+agent definition discovered from the config directory takes effect.
+
+Check:
+
+```bash
+python scripts/room.py verify                 # overlay 'env' + installed seat prompt drift
+paseo daemon config get agents.providers --json   # each derived entry's env.OPENCODE_CONFIG_DIR
+cat ~/.config/opencode-room/seats/opencode-supervisor/agents/build.md
+```
+
+In the running session itself the tell is the prompt: the session should be able to
+say which seat it is and quote its role contract's first line. A seat created from a
+room profile also shows the seat name as its `build` mode description in Paseo. (An
+older session may have discovered a role by calling `list_profiles` and reading
+`notes` — that was luck, not delivery.)
+
+Fix: `python scripts/room.py sync` re-writes the seat prompts and re-renders the
+overlay, then create the agent again — the seat prompt is loaded by the OpenCode
+server Paseo launches for it, so a running session keeps what it started with. A
+session that must keep going can be told its role in a message instead: name the
+role, point at `~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md`, and stop
+there.
+
 ## A room seat has a child-agent tool again
 
 Symptom: an agent created from `opencode-supervisor`, `opencode-lead`, or
@@ -161,7 +206,9 @@ room does not own and nothing reports.
 Cause: the seat's derived provider entry lost its `env` overlay — a hand edit, a
 Paseo reset, or a config restored from an older backup. The room takes OpenCode's
 native child agents away through `env.OPENCODE_CONFIG_CONTENT` on the derived
-providers only; the base `opencode` provider intentionally keeps them.
+providers only; the base `opencode` provider intentionally keeps them. Losing the
+overlay also costs the seat its role prompt, since `env.OPENCODE_CONFIG_DIR` goes with
+it — see [the section above](#a-seat-does-not-know-its-own-role).
 
 ```bash
 python scripts/room.py verify          # names the derived entry that differs on 'env'
@@ -175,8 +222,9 @@ Paseo's config-path reader does not resolve dynamic keys, so read the whole
 The overlay is process environment: it reaches a seat when Paseo launches that
 provider's OpenCode server, so create a new agent from the profile after the
 repair. To keep native agents in the seats on purpose, set `"nativeAgents": true`
-in `config/room.json` and run `sync` — it removes the overlay from all three
-derived entries.
+in `config/room.json` and run `sync` — it drops the child-agent policy from all
+three derived entries and keeps `OPENCODE_CONFIG_DIR`, so the seats keep their role
+prompts.
 
 ## Roll back a bad sync
 

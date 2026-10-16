@@ -10,6 +10,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = REPO_ROOT / "config" / "room.json"
+# A stand-in operator home: each seat's `OPENCODE_CONFIG_DIR` is resolved against it
+# at sync time.
+TEST_HOME = Path("/home/op")
 
 spec_module = importlib.util.spec_from_file_location("room", REPO_ROOT / "scripts" / "room.py")
 room = importlib.util.module_from_spec(spec_module)
@@ -49,7 +52,7 @@ class RenderTest(unittest.TestCase):
 
     def test_renders_one_derived_provider_per_spec_entry(self):
         spec = load_spec()
-        rendered = room.render_providers(spec)
+        rendered = room.render_providers(spec, TEST_HOME)
         self.assertEqual(
             list(rendered), [p["id"] for p in spec["providers"]]
         )
@@ -63,7 +66,7 @@ class RenderTest(unittest.TestCase):
     def test_derived_provider_models_are_detached_from_the_spec(self):
         spec = load_spec()
         original = spec["providers"][0]["models"][0]["label"]
-        rendered = room.render_providers(spec)
+        rendered = room.render_providers(spec, TEST_HOME)
         rendered[spec["providers"][0]["id"]]["models"][0]["label"] = "mutated"
         self.assertEqual(spec["providers"][0]["models"][0]["label"], original)
 
@@ -79,7 +82,7 @@ class NativeAgentPolicyTest(unittest.TestCase):
     def test_derived_providers_disable_native_child_agents(self):
         spec = load_spec()
         self.assertIs(spec["nativeAgents"], False)
-        for provider_id, provider in room.render_providers(spec).items():
+        for provider_id, provider in room.render_providers(spec, TEST_HOME).items():
             policy = json.loads(provider["env"][room.NATIVE_AGENT_ENV_KEY])
             self.assertIn(
                 {"action": "subagent", "resource": "*", "effect": "deny"},
@@ -96,17 +99,69 @@ class NativeAgentPolicyTest(unittest.TestCase):
         self.assertEqual(entry["enabled"], True)
         self.assertEqual(entry["command"]["mode"], "replace")
 
-    def test_spec_can_keep_native_agents(self):
+    def test_keeping_native_agents_keeps_the_role_contract(self):
         spec = load_spec()
         spec["nativeAgents"] = True
-        for provider in room.render_providers(spec).values():
-            self.assertNotIn("env", provider)
+        for provider_id, provider in room.render_providers(spec, TEST_HOME).items():
+            self.assertNotIn(room.NATIVE_AGENT_ENV_KEY, provider["env"], provider_id)
+            self.assertTrue(provider["env"][room.SEAT_AGENT_ENV_KEY], provider_id)
 
     def test_overlay_is_stable_across_renders(self):
         spec = load_spec()
         self.assertEqual(
-            room.render_providers(spec), room.render_providers(load_spec())
+            room.render_providers(spec, TEST_HOME), room.render_providers(load_spec(), TEST_HOME)
         )
+
+
+class SeatRoleContractTest(unittest.TestCase):
+    """Paseo profile `notes` are chooser metadata. A seat's contract reaches it as
+    the agent definition OpenCode finds in the directory its overlay names."""
+
+    def test_each_seat_points_at_its_own_config_directory(self):
+        spec = load_spec()
+        rendered = room.render_providers(spec, TEST_HOME)
+        for entry in spec["providers"]:
+            self.assertEqual(
+                rendered[entry["id"]]["env"][room.SEAT_AGENT_ENV_KEY],
+                f"{TEST_HOME.as_posix()}/.config/opencode-room/seats/{entry['id']}",
+                entry["id"],
+            )
+
+    def test_seat_config_directories_follow_the_operator_home(self):
+        spec = load_spec()
+        other = Path("/srv/operator")
+        for provider in room.render_providers(spec, other).values():
+            self.assertTrue(
+                provider["env"][room.SEAT_AGENT_ENV_KEY].startswith(other.as_posix() + "/"),
+                provider["env"][room.SEAT_AGENT_ENV_KEY],
+            )
+
+    def test_seat_agent_carries_the_role_prompt_and_the_shared_protocol(self):
+        spec = load_spec()
+        rendered = room.render_seat_agents(spec)
+        roles = room.role_for_provider(spec)
+        self.assertEqual(sorted(rendered), sorted(roles))
+        for provider_id, text in rendered.items():
+            role = roles[provider_id]
+            first_line = room.role_notes(role).splitlines()[0]
+            self.assertIn(first_line, text, provider_id)
+            self.assertIn("~/.config/opencode-room/", text, provider_id)
+            self.assertIn(room.PROTOCOL_PATH.read_text(encoding="utf-8").splitlines()[0], text)
+            self.assertTrue(text.startswith("---\n"), provider_id)
+            self.assertIn("\nmode: primary\n", text, provider_id)
+
+    def test_seat_agent_path_is_the_agents_build_definition(self):
+        path = room.installed_seat_agent_path(TEST_HOME, "opencode-lead")
+        self.assertEqual(
+            path.as_posix(),
+            f"{TEST_HOME.as_posix()}/.config/opencode-room/seats/opencode-lead/agents/build.md",
+        )
+
+    def test_every_seat_is_bound_by_exactly_one_role(self):
+        spec = load_spec()
+        roles = room.role_for_provider(spec)
+        self.assertEqual(sorted(roles), sorted(p["id"] for p in spec["providers"]))
+        self.assertEqual(len(set(roles.values())), len(roles))
 
 
 class SpecValidationTest(unittest.TestCase):
@@ -154,6 +209,16 @@ class SpecValidationTest(unittest.TestCase):
     def test_rejects_profile_naming_an_undeclared_provider(self):
         spec = load_spec()
         spec["agentProfiles"][0]["providerId"] = "opencode-ghost"
+        self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_a_seat_no_profile_binds(self):
+        spec = load_spec()
+        spec["providers"].append(dict(spec["providers"][0], id="opencode-extra"))
+        self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_two_profiles_binding_one_seat(self):
+        spec = load_spec()
+        spec["agentProfiles"][1]["providerId"] = spec["agentProfiles"][0]["providerId"]
         self.assertNotEqual(room.validate_spec(spec), [])
 
     def test_rejects_duplicate_profile_names_and_roles(self):
@@ -260,9 +325,9 @@ class DerivedProviderMergeTest(unittest.TestCase):
     def test_creates_every_derived_entry(self):
         spec = load_spec()
         config = minimal_config()
-        changed = room.merge_providers(config, spec)
+        changed = room.merge_providers(config, spec, TEST_HOME)
         self.assertTrue(changed)
-        desired = room.render_providers(spec)
+        desired = room.render_providers(spec, TEST_HOME)
         providers = config["agents"]["providers"]
         self.assertEqual(list(providers), list(desired))
         for provider_id, want in desired.items():
@@ -278,56 +343,57 @@ class DerivedProviderMergeTest(unittest.TestCase):
             "env": {"X": "1"},
             "paseoTools": {"enabled": False},
         }
-        changed = room.merge_providers(config, spec)
+        changed = room.merge_providers(config, spec, TEST_HOME)
         self.assertTrue(changed)
         entry = config["agents"]["providers"][target]
         self.assertEqual(entry["label"], spec["providers"][0]["label"])
         self.assertEqual(entry["extends"], spec["providerId"])
-        self.assertEqual(entry["env"], room.native_agent_env())
+        self.assertEqual(entry["env"], room.render_providers(spec, TEST_HOME)[target]["env"])
         self.assertEqual(entry["paseoTools"], {"enabled": False})
         self.assertIs(entry["enabled"], False)
 
-    def test_keeping_native_agents_drops_the_overlay(self):
+    def test_keeping_native_agents_drops_only_the_child_agent_policy(self):
         spec = load_spec()
         config = minimal_config(provider=True)
-        room.merge_providers(config, spec)
+        room.merge_providers(config, spec, TEST_HOME)
         spec["nativeAgents"] = True
-        self.assertTrue(room.merge_providers(config, spec))
-        for provider in config["agents"]["providers"].values():
-            self.assertNotIn("env", provider)
+        self.assertTrue(room.merge_providers(config, spec, TEST_HOME))
+        for provider_id, provider in config["agents"]["providers"].items():
+            self.assertNotIn(room.NATIVE_AGENT_ENV_KEY, provider["env"], provider_id)
+            self.assertTrue(provider["env"][room.SEAT_AGENT_ENV_KEY], provider_id)
 
     def test_is_idempotent(self):
         spec = load_spec()
         config = minimal_config(provider=True)
-        room.merge_providers(config, spec)
+        room.merge_providers(config, spec, TEST_HOME)
         before = json.dumps(config["agents"]["providers"], sort_keys=True)
-        self.assertFalse(room.merge_providers(config, spec))
+        self.assertFalse(room.merge_providers(config, spec, TEST_HOME))
         self.assertEqual(json.dumps(config["agents"]["providers"], sort_keys=True), before)
 
     def test_drops_managed_keys_the_spec_no_longer_carries(self):
         spec = load_spec()
         config = minimal_config(provider=True)
-        room.merge_providers(config, spec)
+        room.merge_providers(config, spec, TEST_HOME)
         target = spec["providers"][0]["id"]
         spec["providers"][0].pop("description")
-        self.assertTrue(room.merge_providers(config, spec))
+        self.assertTrue(room.merge_providers(config, spec, TEST_HOME))
         self.assertNotIn("description", config["agents"]["providers"][target])
 
     def test_rejects_non_object_providers(self):
         config = {"agents": {"providers": []}}
         with self.assertRaises(room.RoomError):
-            room.merge_providers(config, load_spec())
+            room.merge_providers(config, load_spec(), TEST_HOME)
 
     def test_removes_only_derived_providers(self):
         spec = load_spec()
         config = minimal_config(provider=True)
-        room.merge_providers(config, spec)
+        room.merge_providers(config, spec, TEST_HOME)
         config["agents"]["providers"]["operator-provider"] = {
             "extends": "acp",
             "label": "Operator provider",
             "command": ["whatever"],
         }
-        changed = room.unmerge_providers(config, list(room.render_providers(spec)))
+        changed = room.unmerge_providers(config, list(room.render_providers(spec, TEST_HOME)))
         self.assertTrue(changed)
         self.assertEqual(list(config["agents"]["providers"]), ["operator-provider"])
 
@@ -461,15 +527,21 @@ class SyncFlowTest(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_sync_then_verify_then_uninstall(self):
-        spec = load_spec()
-        desired = room.render_profiles(spec)
+    def sync(self, spec=None, desired=None):
+        """Mirror the artifact half of cmd_sync, without touching a daemon."""
+        spec = spec or load_spec()
+        desired = desired if desired is not None else room.render_profiles(spec)
         config = room.read_config(self.home)
         room.merge_provider(config, spec)
-        room.merge_providers(config, spec)
+        room.merge_providers(config, spec, self.home)
         room.merge_profiles(config, desired)
         room.write_config_atomic(self.paseo_home / "config.json", config)
         room.install_protocol(self.home)
+        room.install_seat_agents(self.home, spec)
+        return spec, desired
+
+    def test_sync_then_verify_then_uninstall(self):
+        spec, desired = self.sync()
         self.assertEqual(room.verify_installed(self.home, spec, desired), [])
 
         config = room.read_config(self.home)
@@ -479,14 +551,7 @@ class SyncFlowTest(unittest.TestCase):
         self.assertEqual(len(problems), 3)  # all three room profiles missing
 
     def test_verify_reports_derived_provider_drift(self):
-        spec = load_spec()
-        desired = room.render_profiles(spec)
-        config = room.read_config(self.home)
-        room.merge_provider(config, spec)
-        room.merge_providers(config, spec)
-        room.merge_profiles(config, desired)
-        room.install_protocol(self.home)
-        room.write_config_atomic(self.paseo_home / "config.json", config)
+        spec, desired = self.sync()
         config = room.read_config(self.home)
         target = spec["providers"][0]["id"]
         config["agents"]["providers"][target]["models"][0]["label"] = "drifted"
@@ -497,14 +562,7 @@ class SyncFlowTest(unittest.TestCase):
         self.assertIn("models", problems[0])
 
     def test_verify_reports_a_seat_that_regained_native_agents(self):
-        spec = load_spec()
-        desired = room.render_profiles(spec)
-        config = room.read_config(self.home)
-        room.merge_provider(config, spec)
-        room.merge_providers(config, spec)
-        room.merge_profiles(config, desired)
-        room.install_protocol(self.home)
-        room.write_config_atomic(self.paseo_home / "config.json", config)
+        spec, desired = self.sync()
         config = room.read_config(self.home)
         target = spec["providers"][1]["id"]
         config["agents"]["providers"][target].pop("env")
@@ -514,17 +572,23 @@ class SyncFlowTest(unittest.TestCase):
         self.assertIn(target, problems[0])
         self.assertIn("env", problems[0])
 
+    def test_verify_reports_a_seat_that_lost_its_role_contract(self):
+        spec, desired = self.sync()
+        target = spec["providers"][2]["id"]
+        installed = room.installed_seat_agent_path(self.home, target)
+        installed.write_text("hand-edited\n", encoding="utf-8")
+        problems = room.verify_installed(self.home, spec, desired)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(target, problems[0])
+        installed.unlink()
+        problems = room.verify_installed(self.home, spec, desired)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("missing", problems[0])
+
     def test_uninstall_removes_both_layers(self):
-        spec = load_spec()
-        desired = room.render_profiles(spec)
+        spec, desired = self.sync()
         config = room.read_config(self.home)
-        room.merge_provider(config, spec)
-        room.merge_providers(config, spec)
-        room.merge_profiles(config, desired)
-        room.write_config_atomic(self.paseo_home / "config.json", config)
-        room.install_protocol(self.home)
-        config = room.read_config(self.home)
-        self.assertTrue(room.unmerge_providers(config, list(room.render_providers(spec))))
+        self.assertTrue(room.unmerge_providers(config, list(room.render_providers(spec, self.home))))
         self.assertTrue(room.unmerge_profiles(config, [e["name"] for e in spec["agentProfiles"]]))
         room.write_config_atomic(self.paseo_home / "config.json", config)
         problems = room.verify_installed(self.home, spec, desired)
@@ -535,6 +599,22 @@ class SyncFlowTest(unittest.TestCase):
         self.assertFalse(room.install_protocol(self.home))
         self.assertTrue(room.remove_protocol(self.home))
         self.assertFalse((self.home / room.PROTOCOL_INSTALL_SUBPATH).exists())
+
+    def test_seat_agent_install_is_idempotent_and_removable(self):
+        spec = load_spec()
+        self.assertTrue(room.install_seat_agents(self.home, spec))
+        self.assertFalse(room.install_seat_agents(self.home, spec))
+        for provider_id, text in room.render_seat_agents(spec).items():
+            installed = room.installed_seat_agent_path(self.home, provider_id)
+            self.assertEqual(installed.read_text(encoding="utf-8"), text)
+        removed = room.remove_seat_agents(self.home, spec)
+        self.assertEqual(sorted(removed), sorted(room.render_seat_agents(spec)))
+        for provider_id in room.render_seat_agents(spec):
+            self.assertFalse(room.installed_seat_agent_path(self.home, provider_id).exists())
+        self.assertFalse((self.home / room.SEAT_INSTALL_SUBPATH).exists())
+
+    def test_remove_seat_agents_is_a_noop_when_nothing_installed(self):
+        self.assertEqual(room.remove_seat_agents(self.home, load_spec()), [])
 
     def test_read_config_fails_loud_without_paseo(self):
         empty_home = Path(tempfile.mkdtemp())
