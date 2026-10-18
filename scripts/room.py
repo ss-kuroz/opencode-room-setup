@@ -177,13 +177,16 @@ def render_profiles(spec: dict) -> list[dict]:
         if role in seen:
             raise RoomError(f"duplicate role in spec: {role}")
         seen.add(role)
+        note = entry.get("note")
+        if not isinstance(note, str) or not note.strip():
+            raise RoomError(f"agent profile {name!r} is missing a non-empty note")
         profile = {
             "name": name,
             "provider": entry.get("providerId", spec["providerId"]),
             "model": entry["model"],
             "modeId": entry["modeId"],
             "featureValues": {"auto_accept": entry["autoAccept"]},
-            "notes": role_notes(role),
+            "notes": note.strip(),
         }
         # Optional per-model: a model without thinking options simply omits it.
         if entry.get("thinkingOptionId"):
@@ -361,6 +364,9 @@ def validate_spec(spec: dict) -> list[str]:
             problems.append(f"{where}.role {role!r} is declared more than once")
         else:
             seen_roles.add(role)
+        note = entry.get("note")
+        if not isinstance(note, str) or not note.strip():
+            problems.append(f"{where}.note must be a non-empty string")
         provider = entry.get("providerId", base_provider_id)
         if provider not in declared and provider != base_provider_id:
             problems.append(f"{where}.providerId {provider!r} is not a declared provider")

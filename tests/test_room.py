@@ -41,8 +41,8 @@ class RenderTest(unittest.TestCase):
             self.assertEqual(profile["thinkingOptionId"], entry["thinkingOptionId"])
             self.assertEqual(profile["modeId"], entry["modeId"])
             self.assertEqual(profile["featureValues"], {"auto_accept": entry["autoAccept"]})
-            self.assertTrue(profile["notes"].strip())
-            self.assertIn("~/.config/opencode-room/", profile["notes"])
+            self.assertEqual(profile["notes"], entry["note"])
+            self.assertLess(len(profile["notes"]), 400, "profile notes must stay short")
 
     def test_every_profile_provider_is_declared(self):
         spec = load_spec()
@@ -145,14 +145,28 @@ class PaseoToolPolicyTest(unittest.TestCase):
         self.assertNotIn("list_agents", disabled)
         self.assertNotIn("get_agent_status", disabled)
 
-    def test_policy_is_rendered_only_on_the_peer_provider(self):
+    def test_supervisor_and_lead_keep_dispatch_but_not_lifecycle_control(self):
+        spec = load_spec()
+        for provider_id in ("opencode-supervisor", "opencode-lead"):
+            entry = next(p for p in spec["providers"] if p["id"] == provider_id)
+            disabled = set(entry["paseoTools"]["disabledTools"])
+            for tool in ("create_agent", "send_agent_prompt", "cancel_agent", "list_agents"):
+                self.assertNotIn(tool, disabled, provider_id)
+            for tool in (
+                "kill_agent",
+                "archive_agent",
+                "create_workspace",
+                "archive_workspace",
+                "create_schedule",
+                "respond_to_permission",
+            ):
+                self.assertIn(tool, disabled, provider_id)
+
+    def test_policy_is_rendered_on_every_seat(self):
         spec = load_spec()
         rendered = room.render_providers(spec, TEST_HOME)
-        self.assertEqual(
-            rendered["opencode-peer"]["paseoTools"], self.peer_entry(spec)["paseoTools"]
-        )
-        for provider_id in ("opencode-supervisor", "opencode-lead"):
-            self.assertNotIn("paseoTools", rendered[provider_id])
+        for entry in spec["providers"]:
+            self.assertEqual(rendered[entry["id"]]["paseoTools"], entry["paseoTools"])
 
     def test_policy_is_detached_from_the_spec(self):
         spec = load_spec()
@@ -296,6 +310,12 @@ class SpecValidationTest(unittest.TestCase):
         spec = load_spec()
         spec["agentProfiles"][1]["role"] = spec["agentProfiles"][0]["role"]
         self.assertNotEqual(room.validate_spec(spec), [])
+
+    def test_rejects_a_profile_without_a_note(self):
+        spec = load_spec()
+        spec["agentProfiles"][0].pop("note")
+        problems = room.validate_spec(spec)
+        self.assertTrue(any("note" in problem for problem in problems), problems)
 
 
 class ResolveBinaryTest(unittest.TestCase):

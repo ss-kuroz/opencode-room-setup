@@ -21,20 +21,23 @@ a role's model; a derived provider's `models` array replaces the catalog Paseo
 discovered from OpenCode, so it must list every model and thinking option that seat
 should offer.
 
-The profile's `notes` hold the same role prompt, but they are chooser metadata —
-Paseo shows them in its profile list and returns them to callers of its
-`list_profiles` tool. They are not a system prompt, and no Paseo layer delivers a
-per-role prompt to an agent: that is what the seat's own config directory is for, and
-why `sync` writes and re-checks the seat prompt.
+The profile's `notes` are the short `note` from `config/room.json`, and they are
+chooser metadata — Paseo shows them in its profile list and returns them to callers
+of its `list_profiles` tool. They are not a system prompt, and no Paseo layer
+delivers a per-role prompt to an agent: that is what the seat's own config
+directory is for, and why `sync` writes and re-checks the seat prompt. Keeping the
+note short is deliberate: `list_profiles` returns every profile's note to the
+caller.
 
 Each derived provider also carries the native-agent overlay that takes OpenCode's
 child agents away from the seat (`nativeAgents: false` in `config/room.json`), in the
 `OPENCODE_CONFIG_CONTENT` half of the same `env`. That half is a managed key like
 `models`, so sync re-renders it and `verify` reports a seat that lost it; the
 `OPENCODE_CONFIG_DIR` half is what makes a seat start with its contract, and `verify`
-reports that too. Paseo's bridge tools still reach every seat; the Peer's derived
-provider adds a `paseoTools` policy that removes agent creation and lifecycle tools
-and keeps reads plus `send_agent_prompt`, so a Peer can report but cannot spawn.
+reports that too. Paseo's bridge tools still reach every seat; every derived
+provider carries a `paseoTools` policy. Supervisor and Lead keep creation,
+messaging, cancellation, and reads; the Peer keeps reads plus
+`send_agent_prompt`, so it can report but cannot spawn.
 The base `opencode` provider keeps native subagents and its own
 prompt.
 

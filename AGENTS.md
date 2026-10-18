@@ -18,7 +18,7 @@ Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế h
 vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (provider
 trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash:1017` /
 `deepseek-v4-pro` / `deepseek-v4.1-flash:1017` kèm thinking `low` / `max` / `low`, mode
-`build`, `auto_accept`, prompt từ `roles/*.md` đặt ở `notes`), cộng mục provider gốc
+`build`, `auto_accept`, note "when to use" ngắn trong `config/room.json`), cộng mục provider gốc
 `opencode` (ghim `command` dạng argv array vào exe thật và gỡ `enabled: false`
 nếu có, mà ba provider dẫn xuất kế thừa. Mỗi provider dẫn xuất mang overlay `env` làm hai việc:
 `OPENCODE_CONFIG_DIR` trỏ vào thư mục config của ghế — nơi sync đặt
@@ -41,10 +41,11 @@ trò để người vận hành đọc — còn prompt thật tới ghế qua `O
 
 ## Nguồn sự thật
 
-- Prompt 3 role: `roles/<role>.md` (nhúng vào `notes` của profile, và được render
-  vào `~/.config/opencode-room/seats/<provider>/agents/build.md` — prompt mà server
-  OpenCode của ghế nạp, kèm `workflow/WORKSPACE_PROTOCOL.md`).
-- Model/thinking/mode/auto-accept/tên profile: `config/room.json`.
+- Prompt 3 role: `roles/<role>.md` (chỉ render vào
+  `~/.config/opencode-room/seats/<provider>/agents/build.md` — prompt mà server
+  OpenCode của ghế nạp, kèm `workflow/WORKSPACE_PROTOCOL.md`; `notes` của profile
+  là `note` ngắn trong `config/room.json`, không phải prompt).
+- Model/thinking/mode/auto-accept/tên profile/note: `config/room.json`.
 - Provider dẫn xuất cho từng vai trò (id, label, catalog model, `paseoTools`):
   mục `providers` trong `config/room.json`. `models` **thay thế** catalog Paseo dò
   từ OpenCode, nên phải liệt kê đủ model + thinking option của ghế đó.
@@ -105,10 +106,11 @@ key khác trong entry được giữ nguyên.
   `env.OPENCODE_CONFIG_CONTENT` do mục `nativeAgents: false` trong
   `config/room.json` sinh ra: deny quyền `subagent` và disable hai agent con
   built-in `general` / `explore`, nên ghế không còn tool `subagent` của OpenCode.
-  Cầu Paseo (`create_agent`, `send_agent_prompt`, reads) vẫn hiện cho ghế vì Lead
-  phải dispatch Peer qua đó; riêng Peer mang `paseoTools.disabledTools` chặn
-  `create_agent`/`kill_agent`/`create_workspace`/schedule/... nên chỉ còn đọc và
-  báo cáo. Đây là
+  Cầu Paseo vẫn hiện cho ghế vì Lead phải dispatch Peer qua đó. Cả ba provider mang
+  `paseoTools.disabledTools`: Supervisor/Lead giữ `create_agent`, `send_agent_prompt`,
+  `cancel_agent` và các tool đọc, chặn `kill_agent`/`archive_agent`/workspace/schedule/
+  `respond_to_permission`; Peer chặn thêm `create_agent`/`cancel_agent`, chỉ còn đọc
+  và báo cáo. Đây là
   invariant kế thừa từ codex room (native agents disabled trong từng runtime) —
   Paseo sở hữu topology, agent con tự sinh sẽ nằm ngoài hợp đồng báo cáo. Provider
   gốc `opencode` **không** mang overlay, nên việc OpenCode riêng của bạn vẫn còn

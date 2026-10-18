@@ -14,8 +14,8 @@ Paseo daemon (installed on the machine, ~/.paseo/config.json)
        OPENCODE_CONFIG_CONTENT
   -> daemon.agentProfiles "opencode-supervisor | opencode-lead | opencode-peer"
        one profile per role, bound to that role's derived provider: mode build,
-       auto_accept, the pinned model and thinking effort, and the role prompt
-       from roles/<role>.md in `notes` (chooser metadata, not a system prompt)
+       auto_accept, the pinned model and thinking effort, and a short
+       when-to-use note (chooser metadata, not a system prompt)
   -> opencode (ACP server built into the OpenCode CLI)
   -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash:1017 /
        deepseek-v4-pro / deepseek-v4.1-flash:1017, with thinking effort low / max / low
@@ -82,9 +82,10 @@ starts with the authority boundary it was dispatched under. Second,
 built-in `general` and `explore` child agents, so a room seat has no OpenCode-native
 child-agent tool — Paseo owns the Supervisor/Lead/Peer topology, and an agent spawned
 by a seat would sit outside the dispatch, ownership, and reporting contract. Paseo's
-bridge tools still reach every seat (Lead dispatches through them); the Peer's
-provider adds a `paseoTools` policy that removes agent creation and lifecycle tools,
-leaving reads and `send_agent_prompt`.
+bridge tools still reach every seat (Lead dispatches through them); every seat's
+provider now carries a `paseoTools` policy: Supervisor and Lead keep creation,
+messaging, cancellation, and reads, while the Peer keeps only reads and
+`send_agent_prompt`.
 `config/room.json`'s `nativeAgents: false` turns that second half on; the role half is
 always on. The base `opencode` provider is left alone, so the operator keeps native
 subagents and their own prompt in their own OpenCode work.
@@ -143,8 +144,9 @@ coordination contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
 ## Where to edit
 
 - Role prompt or authority: `roles/<role>.md`. `sync` re-renders each seat's
-  `agents/build.md` — the prompt its OpenCode server loads — and refreshes the role
-  prompt in the profile's `notes`; a session already running keeps the prompt it
+  `agents/build.md` — the prompt its OpenCode server loads — while the profile's
+  `notes` stay the short `note` from `config/room.json`; a session already running
+  keeps the prompt it
   started with, so create a new agent to exercise the change.
 - Model, thinking effort, mode, auto-accept, profile names, and the derived
   role providers (id, label, model catalog, and whether the seats keep

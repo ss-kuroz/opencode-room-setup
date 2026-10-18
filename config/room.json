@@ -9,6 +9,24 @@
       "id": "opencode-supervisor",
       "label": "OpenCode - Supervisor",
       "description": "Supervisor seat on the OpenCode provider: DeepSeek V4.1 Flash 1017, thinking low.",
+      "paseoTools": {
+        "disabledTools": [
+          "archive_agent",
+          "kill_agent",
+          "update_agent",
+          "set_agent_mode",
+          "create_workspace",
+          "rename_workspace",
+          "archive_workspace",
+          "create_schedule",
+          "update_schedule",
+          "pause_schedule",
+          "resume_schedule",
+          "delete_schedule",
+          "run_schedule_once",
+          "respond_to_permission"
+        ]
+      },
       "models": [
         {
           "id": "ollama-cloud/deepseek-v4.1-flash:1017",
@@ -26,6 +44,24 @@
       "id": "opencode-lead",
       "label": "OpenCode - Lead",
       "description": "Lead seat on the OpenCode provider: DeepSeek V4 Pro, thinking max.",
+      "paseoTools": {
+        "disabledTools": [
+          "archive_agent",
+          "kill_agent",
+          "update_agent",
+          "set_agent_mode",
+          "create_workspace",
+          "rename_workspace",
+          "archive_workspace",
+          "create_schedule",
+          "update_schedule",
+          "pause_schedule",
+          "resume_schedule",
+          "delete_schedule",
+          "run_schedule_once",
+          "respond_to_permission"
+        ]
+      },
       "models": [
         {
           "id": "ollama-cloud/deepseek-v4-pro",
@@ -80,6 +116,7 @@
     {
       "name": "opencode-supervisor",
       "role": "supervisor",
+      "note": "Use to supervise a named project: observe Lead and Peer evidence, answer bounded questions, route Human decisions, and relay outcomes. Does not do project work.",
       "providerId": "opencode-supervisor",
       "model": "ollama-cloud/deepseek-v4.1-flash:1017",
       "thinkingOptionId": "low",
@@ -89,6 +126,7 @@
     {
       "name": "opencode-lead",
       "role": "lead",
+      "note": "Use to own one project's technical outcome: frame the work, dispatch Peers through Paseo's bridge, integrate, verify, and accept or reject candidates.",
       "providerId": "opencode-lead",
       "model": "ollama-cloud/deepseek-v4-pro",
       "thinkingOptionId": "max",
@@ -98,6 +136,7 @@
     {
       "name": "opencode-peer",
       "role": "peer",
+      "note": "Use for one bounded outcome delegated by Lead: implement or review a named scope and report evidence back. Cannot create or manage other agents.",
       "providerId": "opencode-peer",
       "model": "ollama-cloud/deepseek-v4.1-flash:1017",
       "thinkingOptionId": "low",

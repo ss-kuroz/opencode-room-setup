@@ -232,16 +232,17 @@ prompts.
 
 Symptom: an agent created from `opencode-peer` can call `create_agent`,
 `kill_agent`, `create_workspace`, or the schedule tools, so a Peer can start work
-outside Lead's dispatch.
+outside Lead's dispatch. A Supervisor or Lead that lost the policy keeps those
+tools too, including permanent destruction and workspace/schedule management.
 
-Cause: the Peer's derived provider entry lost its `paseoTools` policy — a hand
+Cause: the seat's derived provider entry lost its `paseoTools` policy — a hand
 edit, a Paseo reset, or a backup restored from before the policy existed. Paseo
-applies `paseoTools` per provider ID; the Supervisor and Lead intentionally keep
-the full bridge because they route or dispatch, and the Peer keeps only reads plus
+applies `paseoTools` per provider ID. Supervisor and Lead keep creation,
+messaging, cancellation, and reads; the Peer keeps only reads plus
 `send_agent_prompt`.
 
 ```bash
-python scripts/room.py verify      # derived provider 'opencode-peer' differs on 'paseoTools'
+python scripts/room.py verify      # names the derived provider that differs on 'paseoTools'
 python scripts/room.py sync        # re-renders the policy, reloads the daemon
 paseo daemon config get agents.providers --json
 ```

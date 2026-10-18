@@ -137,13 +137,15 @@ so the seat's permissions gain a deny that no approval can override, and the
 built-in child agents leave the seat's catalog. With no launchable child agent,
 the seat has no OpenCode-native child-agent tool.
 
-Paseo's own bridge is a second surface: every seat still receives
-`create_agent`, `send_agent_prompt`, `list_agents`, and the rest of Paseo's MCP
-catalog, because the Lead must dispatch Peers through it. Each derived provider
-may therefore carry a `paseoTools` policy. The Peer uses
-`disabledTools` to remove agent creation and lifecycle control
-(`create_agent`, `kill_agent`, `create_workspace`, schedule creation, permission
-approval), leaving read-only inspection plus `send_agent_prompt` for its report
+Paseo's own bridge is a second surface: every seat still receives Paseo's MCP
+catalog, because the Lead must dispatch Peers through it and the Supervisor may
+need bounded recovery. Every derived provider therefore carries a `paseoTools`
+policy. Supervisor and Lead keep `create_agent`, `send_agent_prompt`,
+`cancel_agent`, and the read-only inspection tools; they lose permanent
+destruction and configuration powers (`kill_agent`, `archive_agent`,
+`update_agent`, `set_agent_mode`, workspace creation/rename/archive, schedule
+management, and `respond_to_permission`). The Peer loses creation and lifecycle
+control too, keeping read-only inspection plus `send_agent_prompt` for its report
 to Lead. Paseo applies the policy per provider ID and a running session keeps
 the catalog it launched with, so a policy change needs a new agent. The base
 `opencode` provider entry carries no overlay and no policy — native subagents and
@@ -171,7 +173,8 @@ derived provider is reported as drift and restored by the next `sync`.
 ## Merge semantics
 
 `sync` renders the desired profiles from `config/room.json` (models, thinking
-effort, mode, auto-accept) plus `roles/<role>.md` (the `notes` prompt), then
+effort, mode, auto-accept, and the short `note`), while `roles/<role>.md` is the
+seat prompt that goes to `agents/build.md`, then
 upserts them into `daemon.agentProfiles` **by name**:
 
 - A missing profile is appended with a generated `agent_profile_<8>_<11>` id.
