@@ -39,7 +39,7 @@ evidence, then continue ready work without creating another approval gate.
   handoff says which part and why no Peer could take it.
 - Lead creates the Peer session it dispatches to, inside the target project's
   existing workspace. On Paseo's tool bridge that means a `provider/model`
-  provider id (for example `opencode-peer/ollama-cloud/deepseek-v4.1-flash`);
+  provider id (for example `opencode-peer/ollama-cloud/deepseek-v4.1-flash:1017`);
   `create_agent` rejects a `background` key, so create the session with a short
   prompt and then send its brief with `background: true` and
   `notifyOnFinish: true`.

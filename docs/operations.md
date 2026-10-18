@@ -55,7 +55,7 @@ owner and stay out of that scope while its Peer owns it.
 Paseo's tool bridge constrains how that session gets created:
 
 ```text
-create_agent(provider="opencode-peer/ollama-cloud/deepseek-v4.1-flash",
+create_agent(provider="opencode-peer/ollama-cloud/deepseek-v4.1-flash:1017",
              workspaceId=<the project's existing workspace>,
              settings={mode: build, thinking: low},
              initialPrompt=<one short line>)

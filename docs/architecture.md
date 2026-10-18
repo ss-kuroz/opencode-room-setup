@@ -6,17 +6,17 @@
 ~/.paseo/config.json                     (owned by the operator's Paseo install)
   agents.providers[]                     (managed by scripts/room.py sync)
     "opencode"            enabled + command override -> real opencode.exe
-    "opencode-supervisor"  extends opencode / deepseek-v4.1-flash (default) / thinking low  (default)
+    "opencode-supervisor"  extends opencode / deepseek-v4.1-flash:1017 (default) / thinking low  (default)
     "opencode-lead"        extends opencode / deepseek-v4-pro     (default) / thinking max  (default)
-    "opencode-peer"        extends opencode / deepseek-v4.1-flash (default) / thinking low  (default)
+    "opencode-peer"        extends opencode / deepseek-v4.1-flash:1017 (default) / thinking low  (default)
                            each derived entry also carries env:
                              OPENCODE_CONFIG_DIR -> that seat's config directory,
                                whose agents/build.md is the seat's prompt
                              OPENCODE_CONFIG_CONTENT -> native-agent policy
   daemon.agentProfiles[]                 (managed by scripts/room.py sync)
-    "opencode-supervisor"  provider opencode-supervisor / deepseek-v4.1-flash / thinking low  / build / auto_accept
+    "opencode-supervisor"  provider opencode-supervisor / deepseek-v4.1-flash:1017 / thinking low  / build / auto_accept
     "opencode-lead"        provider opencode-lead       / deepseek-v4-pro     / thinking max  / build / auto_accept
-    "opencode-peer"        provider opencode-peer       / deepseek-v4.1-flash / thinking low  / build / auto_accept
+    "opencode-peer"        provider opencode-peer       / deepseek-v4.1-flash:1017 / thinking low  / build / auto_accept
       |
       v
 opencode (Paseo built-in provider -> OpenCode CLI ACP server)

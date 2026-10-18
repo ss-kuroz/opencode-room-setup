@@ -20,8 +20,8 @@ Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
          auto_accept, model + thinking đã ghim, và prompt vai trò ở `notes`
          (notes là metadata để chọn profile, không phải system prompt)
     -> opencode (ACP server có sẵn trong OpenCode CLI, không cần adapter)
-    -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash /
-       deepseek-v4-pro / deepseek-v4.1-flash, kèm thinking effort low / max / low
+    -> model Ollama Cloud resolve qua OpenCode: deepseek-v4.1-flash:1017 /
+       deepseek-v4-pro / deepseek-v4.1-flash:1017, kèm thinking effort low / max / low
     -> file do sync cài, dùng để dựng prompt cho từng ghế:
          ~/.config/opencode-room/seats/<provider>/agents/build.md
          ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
@@ -110,7 +110,7 @@ daemon đang chạy.
 Đổi model hoặc thinking effort: sửa `config/room.json` (cả mục `providers` của
 vai trò và `model`/`thinkingOptionId` của profile). Thinking là per-model — kiểm
 tra option hợp lệ bằng `paseo provider models opencode` (ví dụ
-`deepseek-v4.1-flash` có low/high/max, còn `deepseek-v4-pro` chỉ có
+`deepseek-v4.1-flash:1017` có low/high/max, còn `deepseek-v4-pro` chỉ có
 high/max). Model không có thinking option thì bỏ trường `thinkingOptionId`;
 sync sẽ xóa nó khỏi profile đã cài.
 

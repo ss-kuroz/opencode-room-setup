@@ -17,8 +17,8 @@ Paseo daemon (installed on the machine, ~/.paseo/config.json)
        auto_accept, the pinned model and thinking effort, and the role prompt
        from roles/<role>.md in `notes` (chooser metadata, not a system prompt)
   -> opencode (ACP server built into the OpenCode CLI)
-  -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash /
-       deepseek-v4-pro / deepseek-v4.1-flash, with thinking effort low / max / low
+  -> Ollama Cloud models resolved by OpenCode: deepseek-v4.1-flash:1017 /
+       deepseek-v4-pro / deepseek-v4.1-flash:1017, with thinking effort low / max / low
   -> files installed by sync per seat, which the seat's prompt is built from:
        ~/.config/opencode-room/seats/<provider>/agents/build.md
        ~/.config/opencode-room/workflow/WORKSPACE_PROTOCOL.md
@@ -115,9 +115,9 @@ them keep working.
 
 | Profile | Provider | Model (Ollama Cloud) | Thinking | Mode | Auto-accept |
 | --- | --- | --- | --- | --- | --- |
-| `opencode-supervisor` | `opencode-supervisor` | `deepseek-v4.1-flash` | `low` | `build` | yes |
+| `opencode-supervisor` | `opencode-supervisor` | `deepseek-v4.1-flash:1017` | `low` | `build` | yes |
 | `opencode-lead` | `opencode-lead` | `deepseek-v4-pro` | `max` | `build` | yes |
-| `opencode-peer` | `opencode-peer` | `deepseek-v4.1-flash` | `low` | `build` | yes |
+| `opencode-peer` | `opencode-peer` | `deepseek-v4.1-flash:1017` | `low` | `build` | yes |
 
 Each profile is bound to the derived provider of the same name, whose catalog
 offers that role's model with the role's thinking effort as the provider-level
@@ -148,7 +148,7 @@ coordination contract lives in `workflow/WORKSPACE_PROTOCOL.md`. Read
   OpenCode's native child agents — `nativeAgents`): `config/room.json`. Thinking
   options are per-model — list valid values with
   `paseo provider models opencode` (e.g. `deepseek-v4-pro` has no `low` and
-  offers only `high`, `max`, while `deepseek-v4.1-flash` offers `low`, `high`,
+  offers only `high`, `max`, while `deepseek-v4.1-flash:1017` offers `low`, `high`,
   `max`). A derived
   provider's `models` array *replaces* that provider's discovered catalog, so
   list every model and thinking option that role provider should offer.

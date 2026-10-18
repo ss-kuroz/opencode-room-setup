@@ -85,7 +85,7 @@ paseo provider models opencode            # the base provider's full catalog
 paseo provider models opencode-supervisor # a role provider: only its own models
 ```
 
-Thinking options are per-model (`deepseek-v4.1-flash` offers `low`, `high`, and
+Thinking options are per-model (`deepseek-v4.1-flash:1017` offers `low`, `high`, and
 `max`; `deepseek-v4-pro` offers only `high` and `max`). A profile may also omit
 `thinkingOptionId` entirely for a model without thinking options. A role
 provider's catalog is
@@ -106,8 +106,8 @@ Two causes were seen on Paseo 0.11.2:
 
 - `provider must be provider/model, for example codex/gpt-5.4` — the call
   passed a bare provider id. A room seat is a derived provider, so the id has
-  to carry its model explicitly: `opencode-peer/ollama-cloud/deepseek-v4.1-flash`,
-  `opencode-supervisor/ollama-cloud/deepseek-v4.1-flash`,
+  to carry its model explicitly: `opencode-peer/ollama-cloud/deepseek-v4.1-flash:1017`,
+  `opencode-supervisor/ollama-cloud/deepseek-v4.1-flash:1017`,
   `opencode-lead/ollama-cloud/deepseek-v4-pro`.
 - `Unrecognized key: "background"` — `create_agent`'s bridge schema has no
   `background` field even though the tool description mentions one. Create the

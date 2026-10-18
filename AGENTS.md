@@ -16,8 +16,8 @@ Amp đã về hưu — repo amp-room-setup đã xoá, room OpenCode thay thế h
 ("opencode-supervisor" / "opencode-lead" / "opencode-peer", mỗi cái
 `extends: "opencode"` + label riêng + catalog model với model và thinking của
 vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (provider
-trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash` /
-`deepseek-v4-pro` / `deepseek-v4.1-flash` kèm thinking `low` / `max` / `low`, mode
+trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash:1017` /
+`deepseek-v4-pro` / `deepseek-v4.1-flash:1017` kèm thinking `low` / `max` / `low`, mode
 `build`, `auto_accept`, prompt từ `roles/*.md` đặt ở `notes`), cộng mục provider gốc
 `opencode` (ghim `enabled: true` + `command` override vào exe thật, mà ba
 provider dẫn xuất kế thừa. Mỗi provider dẫn xuất mang overlay `env` làm hai việc:
@@ -76,7 +76,7 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   mất auth thì agent start lỗi — kiểm tra bằng
   `paseo provider diagnostic opencode`, đăng nhập lại bằng
   `opencode auth login`.
-- Thinking effort là per-model: `deepseek-v4.1-flash` có low/high/max, còn
+- Thinking effort là per-model: `deepseek-v4.1-flash:1017` có low/high/max, còn
   `deepseek-v4-pro` chỉ có high/max — đổi model trong `config/room.json` thì
   kiểm tra lại thinking hợp lệ bằng `paseo provider models opencode`.
 - **Ghế nhận vai qua `OPENCODE_CONFIG_DIR` + `agents/build.md`, KHÔNG phải `notes` của profile.**
@@ -127,7 +127,7 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   agent mới.
 - **Tạo agent từ trong agent phải theo 2 luật của cầu Paseo** (đã dính thật,
   2026-10-15): `provider` phải ở dạng `provider/model` — ví dụ
-  `opencode-peer/ollama-cloud/deepseek-v4.1-flash`, truyền `opencode-peer` trần
+  `opencode-peer/ollama-cloud/deepseek-v4.1-flash:1017`, truyền `opencode-peer` trần
   là HTTP 500; và `create_agent` **không** nhận key `background`. Cách đúng: tạo
   session với `initialPrompt` một dòng, rồi gửi brief thật bằng
   `send_agent_prompt` kèm `background: true` + `notifyOnFinish: true`. Truyền

@@ -8,11 +8,11 @@
     {
       "id": "opencode-supervisor",
       "label": "OpenCode - Supervisor",
-      "description": "Supervisor seat on the OpenCode provider: DeepSeek V4.1 Flash, thinking low.",
+      "description": "Supervisor seat on the OpenCode provider: DeepSeek V4.1 Flash 1017, thinking low.",
       "models": [
         {
-          "id": "ollama-cloud/deepseek-v4.1-flash",
-          "label": "DeepSeek V4.1 Flash",
+          "id": "ollama-cloud/deepseek-v4.1-flash:1017",
+          "label": "DeepSeek V4.1 Flash 1017",
           "isDefault": true,
           "thinkingOptions": [
             { "id": "low", "label": "Low", "isDefault": true },
@@ -41,11 +41,11 @@
     {
       "id": "opencode-peer",
       "label": "OpenCode - Peer",
-      "description": "Peer seat on the OpenCode provider: DeepSeek V4.1 Flash, thinking low.",
+      "description": "Peer seat on the OpenCode provider: DeepSeek V4.1 Flash 1017, thinking low.",
       "models": [
         {
-          "id": "ollama-cloud/deepseek-v4.1-flash",
-          "label": "DeepSeek V4.1 Flash",
+          "id": "ollama-cloud/deepseek-v4.1-flash:1017",
+          "label": "DeepSeek V4.1 Flash 1017",
           "isDefault": true,
           "thinkingOptions": [
             { "id": "low", "label": "Low", "isDefault": true },
@@ -61,7 +61,7 @@
       "name": "opencode-supervisor",
       "role": "supervisor",
       "providerId": "opencode-supervisor",
-      "model": "ollama-cloud/deepseek-v4.1-flash",
+      "model": "ollama-cloud/deepseek-v4.1-flash:1017",
       "thinkingOptionId": "low",
       "modeId": "build",
       "autoAccept": true
@@ -79,7 +79,7 @@
       "name": "opencode-peer",
       "role": "peer",
       "providerId": "opencode-peer",
-      "model": "ollama-cloud/deepseek-v4.1-flash",
+      "model": "ollama-cloud/deepseek-v4.1-flash:1017",
       "thinkingOptionId": "low",
       "modeId": "build",
       "autoAccept": true
