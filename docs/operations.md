@@ -32,7 +32,10 @@ child agents away from the seat (`nativeAgents: false` in `config/room.json`), i
 `OPENCODE_CONFIG_CONTENT` half of the same `env`. That half is a managed key like
 `models`, so sync re-renders it and `verify` reports a seat that lost it; the
 `OPENCODE_CONFIG_DIR` half is what makes a seat start with its contract, and `verify`
-reports that too. The base `opencode` provider keeps native subagents and its own
+reports that too. Paseo's bridge tools still reach every seat; the Peer's derived
+provider adds a `paseoTools` policy that removes agent creation and lifecycle tools
+and keeps reads plus `send_agent_prompt`, so a Peer can report but cannot spawn.
+The base `opencode` provider keeps native subagents and its own
 prompt.
 
 The three roles have distinct authority. Human keeps product, cost, external
@@ -185,7 +188,8 @@ Peer.
 The Paseo Desktop UI can edit or delete room profiles or derived role providers.
 `python scripts/room.py verify` reports exactly which field of which profile or
 provider drifted — including a derived provider that lost its `env` overlay and so
-lost its role prompt *and* regained OpenCode's native child agents —
+lost its role prompt *and* regained OpenCode's native child agents, or a Peer that
+lost its `paseoTools` policy and can create agents again —
 `python scripts/room.py sync` restores it without disturbing unrelated profiles or
 providers. Config backups from every sync live under `~/.opencode-room-backups/`.
 `verify` also compares the installed `seats/<provider>/agents/build.md` and

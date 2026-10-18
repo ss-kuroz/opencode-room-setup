@@ -54,9 +54,11 @@ Paseo's version probe fails and it silently falls back to the legacy OpenCode
 v1 integration, which requests root-path API endpoints that OpenCode v2
 servers answer with the web UI's HTML page.
 
-`sync` prevents this by pinning a `command` override
-(`{"mode": "replace", "argv": [<real opencode.exe>]}`) in the provider entry,
-resolved from the shim at sync time. If the error still appears:
+`sync` prevents this by pinning a `command` argv array
+(`["<real opencode.exe>"]`) in the provider entry, resolved from the shim at
+sync time. Paseo still accepts the older replace object
+(`{"mode": "replace", "argv": [...]}`), so `verify` treats both as the same
+launch. If the error still appears:
 
 ```bash
 python scripts/room.py verify          # provider 'opencode' differs on 'command'?
@@ -225,6 +227,28 @@ repair. To keep native agents in the seats on purpose, set `"nativeAgents": true
 in `config/room.json` and run `sync` — it drops the child-agent policy from all
 three derived entries and keeps `OPENCODE_CONFIG_DIR`, so the seats keep their role
 prompts.
+
+## A Peer can create agents again
+
+Symptom: an agent created from `opencode-peer` can call `create_agent`,
+`kill_agent`, `create_workspace`, or the schedule tools, so a Peer can start work
+outside Lead's dispatch.
+
+Cause: the Peer's derived provider entry lost its `paseoTools` policy — a hand
+edit, a Paseo reset, or a backup restored from before the policy existed. Paseo
+applies `paseoTools` per provider ID; the Supervisor and Lead intentionally keep
+the full bridge because they route or dispatch, and the Peer keeps only reads plus
+`send_agent_prompt`.
+
+```bash
+python scripts/room.py verify      # derived provider 'opencode-peer' differs on 'paseoTools'
+python scripts/room.py sync        # re-renders the policy, reloads the daemon
+paseo daemon config get agents.providers --json
+```
+
+A running session keeps the tool catalog it received at launch, so create a new
+Peer after the repair. The policy limits the catalog; it is not a security
+boundary against a seat that can reach the host through a shell.
 
 ## Roll back a bad sync
 

@@ -80,9 +80,8 @@ SEAT_INSTALL_SUBPATH = Path(".config") / "opencode-room" / "seats"
 PROFILE_ID_PREFIX = "agent_profile_"
 BACKUP_DIRNAME = ".opencode-room-backups"
 MANAGED_PROFILE_KEYS = ("provider", "model", "modeId", "thinkingOptionId", "featureValues", "notes")
-PROVIDER_MANAGED_KEYS = ("enabled", "command")
 # The whole derived entry is room-owned: it exists only because the spec declares it.
-DERIVED_PROVIDER_MANAGED_KEYS = ("extends", "label", "description", "models", "env")
+DERIVED_PROVIDER_MANAGED_KEYS = ("extends", "label", "description", "models", "env", "paseoTools")
 # Paseo accepts a custom provider id only in this alphabet, and derives a custom
 # provider only when the id is not one of its built-in provider ids.
 PROVIDER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -292,6 +291,8 @@ def render_providers(spec: dict, home: Path) -> dict[str, dict]:
         }
         if entry.get("description"):
             provider["description"] = entry["description"]
+        if entry.get("paseoTools") is not None:
+            provider["paseoTools"] = json.loads(json.dumps(entry["paseoTools"]))
         provider["env"] = seat_env_overlay(spec, home, entry["id"])
         providers[entry["id"]] = provider
     return providers
@@ -337,6 +338,7 @@ def validate_spec(spec: dict) -> list[str]:
         if not str(entry.get("label", "")).strip():
             problems.append(f"{where}.label must be a non-empty string")
         problems.extend(validate_models(entry.get("models"), where))
+        problems.extend(validate_paseo_tools(entry.get("paseoTools"), where))
     seen_roles: set[str] = set()
     seen_names: set[str] = set()
     bound: dict[str, str] = {}
@@ -397,6 +399,33 @@ def validate_models(models: object, where: str) -> list[str]:
     defaults = [m for m in models if isinstance(m, dict) and m.get("isDefault") is True]
     if len(defaults) > 1:
         problems.append(f"{where}.models marks more than one model as default")
+    return problems
+
+
+def validate_paseo_tools(policy: object, where: str) -> list[str]:
+    """Check one derived provider's `paseoTools` policy against Paseo's schema.
+
+    Paseo accepts `enabled` (boolean) and `disabledTools` (exact tool IDs, without
+    the `paseo_` prefix) on a provider entry. The room uses `disabledTools` to
+    keep a seat's Paseo bridge narrower than its role allows; an unknown field
+    would be silently ignored by Paseo, so reject it here instead.
+    """
+    if policy is None:
+        return []
+    if not isinstance(policy, dict):
+        return [f"{where}.paseoTools must be an object"]
+    problems: list[str] = []
+    for key in policy:
+        if key not in ("enabled", "disabledTools"):
+            problems.append(f"{where}.paseoTools.{key} is not a Paseo policy field")
+    if "enabled" in policy and not isinstance(policy["enabled"], bool):
+        problems.append(f"{where}.paseoTools.enabled must be a boolean")
+    tools = policy.get("disabledTools")
+    if tools is not None:
+        if not isinstance(tools, list) or not all(
+            isinstance(tool, str) and tool.strip() for tool in tools
+        ):
+            problems.append(f"{where}.paseoTools.disabledTools must be a list of tool IDs")
     return problems
 
 
@@ -469,11 +498,39 @@ def resolve_opencode_binary() -> str:
     return str(candidate)
 
 
+def provider_command_argv(value: object) -> list[str] | None:
+    """Normalize Paseo's accepted `command` shapes to one argv list.
+
+    Paseo documents `command` as an argv array (`[binary, *args]`), and its own
+    config writer stores that shape. It still accepts the older
+    `{"mode": "replace", "argv": [...]}` object this repository used to write,
+    and older sync runs left it in place. Both launch the same binary, so
+    `verify` compares their normalized argv rather than the literal shape.
+    """
+    if isinstance(value, list):
+        if value and all(isinstance(part, str) and part for part in value):
+            return list(value)
+        return None
+    if isinstance(value, dict) and value.get("mode") == "replace":
+        argv = value.get("argv")
+        if isinstance(argv, list) and argv and all(isinstance(part, str) and part for part in argv):
+            return list(argv)
+    return None
+
+
 def desired_provider_entry(spec: dict) -> dict:
-    """Render the provider keys this room manages from the spec and machine."""
+    """Render the provider keys this room manages from the spec and machine.
+
+    `command` is the real OpenCode executable as Paseo's documented argv array.
+    `enabled: true` is Paseo's default, so it is omitted instead of written:
+    Paseo's own config writer drops the redundant key, and leaving it out of the
+    desired entry keeps `verify` from reporting drift each time that happens.
+    A provider someone disabled is repaired by removing the `false` flag.
+    """
     entry = dict(spec["provider"])
-    entry["enabled"] = True
-    entry["command"] = {"mode": "replace", "argv": [resolve_opencode_binary()]}
+    entry["command"] = [resolve_opencode_binary()]
+    if entry.get("enabled") is True:
+        entry.pop("enabled")
     return entry
 
 
@@ -495,6 +552,9 @@ def merge_provider(config: dict, spec: dict) -> bool:
     if not isinstance(current, dict):
         raise RoomError(f"agents.providers.{provider_id} in the Paseo config is not an object")
     merged = dict(current)
+    if "enabled" not in desired:
+        # Paseo's default is enabled; removing a stale `false` restores it.
+        merged.pop("enabled", None)
     for key, value in desired.items():
         merged[key] = value
     if merged == current:
@@ -509,8 +569,9 @@ def merge_providers(config: dict, spec: dict, home: Path) -> bool:
 
     Each derived entry is wholly owned by the spec, so a managed key the desired
     entry does not carry is dropped â€” for example the native-agent policy when the
-    spec asks to keep native agents. Unrelated keys an operator added by hand (for
-    example `enabled`, `order`, or `paseoTools`) survive.
+    spec asks to keep native agents, or a `paseoTools` policy the spec no longer
+    declares. Unrelated keys an operator added by hand (for example `enabled` or
+    `order`) survive.
     """
     providers = config.setdefault("agents", {}).setdefault("providers", {})
     if not isinstance(providers, dict):
@@ -762,9 +823,16 @@ def verify_installed(home: Path, spec: dict, desired: list[dict]) -> list[str]:
     elif not isinstance(current_provider, dict):
         problems.append(f"agents.providers.{provider_id} in the Paseo config is not an object")
     elif desired_provider is not None:
-        for key in PROVIDER_MANAGED_KEYS:
-            if current_provider.get(key) != desired_provider.get(key):
-                problems.append(f"provider '{provider_id}' differs on '{key}'; run sync")
+        desired_command = provider_command_argv(desired_provider.get("command"))
+        current_command = provider_command_argv(current_provider.get("command"))
+        if current_command != desired_command:
+            problems.append(
+                f"provider '{provider_id}' command does not match {desired_command}; run sync"
+            )
+        if bool(current_provider.get("enabled", True)) != bool(
+            desired_provider.get("enabled", True)
+        ):
+            problems.append(f"provider '{provider_id}' differs on 'enabled'; run sync")
     for derived_id, want in render_providers(spec, home).items():
         current = providers.get(derived_id)
         if current is None:

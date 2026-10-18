@@ -19,8 +19,8 @@ vai trò được đánh `isDefault`) và ba `daemon.agentProfiles` cùng tên (
 trỏ vào provider dẫn xuất tương ứng, model Ollama Cloud `deepseek-v4.1-flash:1017` /
 `deepseek-v4-pro` / `deepseek-v4.1-flash:1017` kèm thinking `low` / `max` / `low`, mode
 `build`, `auto_accept`, prompt từ `roles/*.md` đặt ở `notes`), cộng mục provider gốc
-`opencode` (ghim `enabled: true` + `command` override vào exe thật, mà ba
-provider dẫn xuất kế thừa. Mỗi provider dẫn xuất mang overlay `env` làm hai việc:
+`opencode` (ghim `command` dạng argv array vào exe thật và gỡ `enabled: false`
+nếu có, mà ba provider dẫn xuất kế thừa. Mỗi provider dẫn xuất mang overlay `env` làm hai việc:
 `OPENCODE_CONFIG_DIR` trỏ vào thư mục config của ghế — nơi sync đặt
 `agents/build.md` mang **prompt thật** của ghế (role prompt + hợp đồng chung), vì
 OpenCode lấy agent definition trong thư mục đó làm prompt (đây là **cách duy nhất**
@@ -45,8 +45,8 @@ trò để người vận hành đọc — còn prompt thật tới ghế qua `O
   vào `~/.config/opencode-room/seats/<provider>/agents/build.md` — prompt mà server
   OpenCode của ghế nạp, kèm `workflow/WORKSPACE_PROTOCOL.md`).
 - Model/thinking/mode/auto-accept/tên profile: `config/room.json`.
-- Provider dẫn xuất cho từng vai trò (id, label, catalog model): mục
-  `providers` trong `config/room.json`. `models` **thay thế** catalog Paseo dò
+- Provider dẫn xuất cho từng vai trò (id, label, catalog model, `paseoTools`):
+  mục `providers` trong `config/room.json`. `models` **thay thế** catalog Paseo dò
   từ OpenCode, nên phải liệt kê đủ model + thinking option của ghế đó.
 - Hợp đồng phối hợp chung: `workflow/WORKSPACE_PROTOCOL.md`.
 - Logic merge: `scripts/room.py` (stdlib Python, fail loud, exit != 0 khi lỗi).
@@ -66,9 +66,10 @@ Trên máy này (Windows): Paseo daemon desktop-managed port 6767, `paseo.cmd`
 ở `~/.local/bin`, OpenCode CLI v2.0.29 cài global qua npm (exe thật ở
 `AppData\Roaming\npm\node_modules\@opencode\cli\bin\opencode.exe`, shim
 `opencode.CMD` ở `AppData\Roaming\npm`), Ollama Cloud đã auth trong OpenCode.
-Provider `opencode` là built-in của Paseo — sync quản lý 2 key trong entry:
-`enabled: true` và `command` override trỏ vào exe thật (xem gotcha về npm
-shim bên dưới); các key khác trong entry được giữ nguyên.
+Provider `opencode` là built-in của Paseo — sync quản lý `command` (argv array trỏ
+vào exe thật, xem gotcha về npm shim bên dưới) và bảo đảm provider không bị tắt
+(`enabled: false` bị gỡ; `enabled: true` là default của Paseo nên không ghi); các
+key khác trong entry được giữ nguyên.
 
 ## Gotchas
 
@@ -103,7 +104,11 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   xuất (`opencode-supervisor` / `-lead` / `-peer`) mang
   `env.OPENCODE_CONFIG_CONTENT` do mục `nativeAgents: false` trong
   `config/room.json` sinh ra: deny quyền `subagent` và disable hai agent con
-  built-in `general` / `explore`, nên ghế không còn tool agent con nào. Đây là
+  built-in `general` / `explore`, nên ghế không còn tool `subagent` của OpenCode.
+  Cầu Paseo (`create_agent`, `send_agent_prompt`, reads) vẫn hiện cho ghế vì Lead
+  phải dispatch Peer qua đó; riêng Peer mang `paseoTools.disabledTools` chặn
+  `create_agent`/`kill_agent`/`create_workspace`/schedule/... nên chỉ còn đọc và
+  báo cáo. Đây là
   invariant kế thừa từ codex room (native agents disabled trong từng runtime) —
   Paseo sở hữu topology, agent con tự sinh sẽ nằm ngoài hợp đồng báo cáo. Provider
   gốc `opencode` **không** mang overlay, nên việc OpenCode riêng của bạn vẫn còn
@@ -120,8 +125,9 @@ shim bên dưới); các key khác trong entry được giữ nguyên.
   shell (spawn EINVAL). Không có command override thì Paseo fallback âm thầm
   sang integration OpenCode v1 legacy (root paths) và agent fail với lỗi
   "Request is not supported by this version of OpenCode Server". Sync tự pin
-  `command: {mode: "replace", argv: [<opencode.exe thật>]}` trong entry
-  provider `opencode` (resolve từ shim lúc sync). Đừng xóa key này bằng tay —
+  `command: ["<opencode.exe thật>"]` trong entry provider `opencode` (argv array
+  là dạng Paseo ghi và ưu tiên; dạng cũ `{mode: "replace", argv: [...]}` vẫn được
+  `verify` chấp nhận vì Paseo normalize cả hai). Đừng xóa key này bằng tay —
   chạy lại `sync` là khôi phục.**
 - Session đang chạy không nhận prompt mới; profile chỉ có hiệu lực khi tạo
   agent mới.

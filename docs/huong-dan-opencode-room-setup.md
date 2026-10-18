@@ -29,8 +29,9 @@ Paseo daemon (đã cài trên máy, ~/.paseo/config.json)
 
 Repo không cài Paseo, OpenCode, hay Ollama. Nó chỉ sở hữu ba thứ: các mục
 provider trong `~/.paseo/config.json` (provider gốc `opencode` mà sync ghim
-`enabled: true` và `command` override trỏ vào exe thật, cộng ba provider dẫn
-xuất cho ba vai trò) và ba agent profile, các file ở `~/.config/opencode-room/`
+`command` argv array trỏ vào exe thật và gỡ `enabled: false` nếu có, cộng ba
+provider dẫn xuất cho ba vai trò) và ba agent profile, các file ở
+`~/.config/opencode-room/`
 (hợp đồng chung và prompt của từng ghế), và backup config ở
 `~/.opencode-room-backups/`. Toàn bộ phần còn lại của `~/.paseo/config.json`
 (listen, plugins, provider khác, profile khác) được giữ nguyên, không đụng tới.
@@ -61,9 +62,14 @@ thay vì dispatch.
 
 Ba provider dẫn xuất còn mang thêm policy **tắt multi-agent của OpenCode** trong
 `OPENCODE_CONFIG_CONTENT` của cùng overlay `env`: deny quyền `subagent` và gỡ hai
-agent con built-in `general` / `explore` khỏi catalog, nên ghế không còn tool gọi
-agent con nào cả. Lý do: Paseo sở hữu topology Supervisor/Lead/Peer, một agent con
-do ghế tự sinh sẽ nằm ngoài hợp đồng dispatch / ownership / báo cáo. Provider gốc
+agent con built-in `general` / `explore` khỏi catalog, nên ghế không còn tool
+`subagent` của OpenCode. Lý do: Paseo sở hữu topology Supervisor/Lead/Peer, một agent
+con do ghế tự sinh sẽ nằm ngoài hợp đồng dispatch / ownership / báo cáo.
+
+Cầu Paseo vẫn tới mọi ghế — Lead phải `create_agent` để dispatch Peer. Riêng Peer
+mang `paseoTools.disabledTools` trên provider của nó, chặn `create_agent`,
+`kill_agent`, workspace, schedule và `respond_to_permission`; Peer chỉ còn đọc và
+`send_agent_prompt` để báo cáo. Provider gốc
 `opencode` **không** bị đụng tới, nên phần việc OpenCode riêng của bạn vẫn giữ
 nguyên multi-agent và prompt riêng của bạn.
 
@@ -177,18 +183,21 @@ cho Peer.
   OpenCode, nên phải liệt kê đủ mọi model và thinking option mà ghế đó được
   phép dùng; model và `providerId` của profile phải khớp với nhau.
 - Đổi provider gốc: sửa `config/room.json` (mục `provider`). Với provider
-  built-in `opencode`, sync quản lý 2 key trong entry — `enabled` và
-  `command` override trỏ vào exe thật (xem gotcha về npm shim trong
-  AGENTS.md); các key khác trong entry được giữ nguyên. Ba provider dẫn xuất
+  built-in `opencode`, sync quản lý `command` (argv array trỏ vào exe thật) và
+  gỡ `enabled: false` nếu có — `enabled: true` là default của Paseo nên không
+  ghi (xem gotcha về npm shim trong AGENTS.md); các key khác trong entry được giữ
+  nguyên. Ba provider dẫn xuất
   kế thừa launch này nên đường dẫn exe chỉ được ghi ở một chỗ.
 - Bật/tắt multi-agent của OpenCode cho ba ghế: mục `nativeAgents` trong
   `config/room.json` (`false` = tắt, giá trị đang dùng). Khi tắt, sync render
   policy deny `subagent` + disable `general`/`explore` vào
-  `OPENCODE_CONFIG_CONTENT` của từng provider dẫn xuất. Nửa còn lại của overlay —
+  `OPENCODE_CONFIG_CONTENT` của từng provider dẫn xuất. Giới hạn cầu Paseo của
+  Peer: mục `paseoTools` trong entry `opencode-peer` — sync render nguyên object
+  đó vào provider và `verify` báo drift nếu mất. Nửa còn lại của overlay —
   `OPENCODE_CONFIG_DIR` trỏ vào thư mục prompt của ghế — **luôn** có, vì đó là cách
   ghế nhận vai. `verify` coi cả `env` là managed key nên báo drift nếu ghế mất
   overlay, và báo cả khi file prompt của ghế bị thiếu/sửa tay. Provider gốc không
-  bao giờ nhận overlay này.
+  bao giờ nhận overlay hay policy này.
 - Đổi nguyên tắc phối hợp chung: sửa `workflow/WORKSPACE_PROTOCOL.md`.
 - Đổi logic merge/render: sửa `scripts/room.py` và test boundary tương ứng
   trong `tests/test_room.py`.

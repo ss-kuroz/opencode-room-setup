@@ -42,6 +42,26 @@
       "id": "opencode-peer",
       "label": "OpenCode - Peer",
       "description": "Peer seat on the OpenCode provider: DeepSeek V4.1 Flash 1017, thinking low.",
+      "paseoTools": {
+        "disabledTools": [
+          "create_agent",
+          "archive_agent",
+          "kill_agent",
+          "cancel_agent",
+          "update_agent",
+          "set_agent_mode",
+          "create_workspace",
+          "rename_workspace",
+          "archive_workspace",
+          "create_schedule",
+          "update_schedule",
+          "pause_schedule",
+          "resume_schedule",
+          "delete_schedule",
+          "run_schedule_once",
+          "respond_to_permission"
+        ]
+      },
       "models": [
         {
           "id": "ollama-cloud/deepseek-v4.1-flash:1017",

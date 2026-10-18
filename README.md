@@ -79,9 +79,12 @@ its role: `OPENCODE_CONFIG_DIR` names the seat's config directory, whose
 `agents/build.md` is the seat's prompt (role contract + shared protocol), so the seat
 starts with the authority boundary it was dispatched under. Second,
 `OPENCODE_CONFIG_CONTENT` denies the `subagent` permission and removes OpenCode's
-built-in `general` and `explore` child agents, so a room seat has no child-agent tool
-at all — Paseo owns the Supervisor/Lead/Peer topology, and an agent spawned by a seat
-would sit outside the dispatch, ownership, and reporting contract.
+built-in `general` and `explore` child agents, so a room seat has no OpenCode-native
+child-agent tool — Paseo owns the Supervisor/Lead/Peer topology, and an agent spawned
+by a seat would sit outside the dispatch, ownership, and reporting contract. Paseo's
+bridge tools still reach every seat (Lead dispatches through them); the Peer's
+provider adds a `paseoTools` policy that removes agent creation and lifecycle tools,
+leaving reads and `send_agent_prompt`.
 `config/room.json`'s `nativeAgents: false` turns that second half on; the role half is
 always on. The base `opencode` provider is left alone, so the operator keeps native
 subagents and their own prompt in their own OpenCode work.

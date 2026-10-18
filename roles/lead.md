@@ -38,8 +38,8 @@ Continue each ready branch without waiting for unrelated assignments.
 An authorized task is not Lead's own workload. The hands-on legwork — writing
 the code, running probes and captures, editing the files — belongs to a Peer,
 and Lead creates the Peer sessions it dispatches to, inside the project's
-existing workspace, through Paseo's agent bridge. A seat has no child-agent tool
-of its own, so a helper exists only when a dispatch creates it; never work
+existing workspace, through Paseo's agent bridge. A seat has no OpenCode child
+agent of its own, so a helper exists only when a dispatch creates it; never work
 around that by doing the legwork yourself silently. Lead's own hands stay on
 framing, the shared contract
 between the parts, integration, verification, and explicit acceptance. When

@@ -46,7 +46,8 @@ evidence, then continue ready work without creating another approval gate.
 - Every room agent is one that Paseo dispatched: the seats launch no child
   agents of their own. The room disables the harness's native subagents in the
   Supervisor/Lead/Peer seats, and a Peer never creates or coordinates another
-  agent. A new seat comes from a dispatch through Paseo, not from inside a
+  agent — its provider removes the Paseo creation and lifecycle tools. A new seat
+  comes from a dispatch through Paseo, not from inside a
   running session. A seat that finds itself needing a helper reports the need
   and lets Lead decide.
 - Agree on shared contracts before dispatch. Sequence changes to shared files

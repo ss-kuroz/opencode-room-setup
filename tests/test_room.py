@@ -96,8 +96,11 @@ class NativeAgentPolicyTest(unittest.TestCase):
         spec = load_spec()
         entry = room.desired_provider_entry(spec)
         self.assertNotIn("env", entry)
-        self.assertEqual(entry["enabled"], True)
-        self.assertEqual(entry["command"]["mode"], "replace")
+        # Paseo's default is enabled; writing `true` only creates churn when its
+        # config writer drops the redundant key.
+        self.assertNotIn("enabled", entry)
+        self.assertIsInstance(entry["command"], list)
+        self.assertTrue(entry["command"][0].lower().endswith("opencode.exe"))
 
     def test_keeping_native_agents_keeps_the_role_contract(self):
         spec = load_spec()
@@ -111,6 +114,71 @@ class NativeAgentPolicyTest(unittest.TestCase):
         self.assertEqual(
             room.render_providers(spec, TEST_HOME), room.render_providers(load_spec(), TEST_HOME)
         )
+
+
+class PaseoToolPolicyTest(unittest.TestCase):
+    """A seat's Paseo bridge is narrower than its OpenCode toolset: the Peer may
+    report to Lead, but it may not create or steer other agents. Paseo applies
+    the policy per provider ID, and the room gives each seat its own provider."""
+
+    def peer_entry(self, spec):
+        return next(p for p in spec["providers"] if p["id"] == "opencode-peer")
+
+    def test_peer_cannot_create_or_manage_agents_or_schedules(self):
+        disabled = set(self.peer_entry(load_spec())["paseoTools"]["disabledTools"])
+        for tool in (
+            "create_agent",
+            "archive_agent",
+            "kill_agent",
+            "cancel_agent",
+            "update_agent",
+            "set_agent_mode",
+            "create_workspace",
+            "archive_workspace",
+            "create_schedule",
+            "run_schedule_once",
+            "respond_to_permission",
+        ):
+            self.assertIn(tool, disabled)
+        # Reporting upward stays possible; read-only inspection stays possible.
+        self.assertNotIn("send_agent_prompt", disabled)
+        self.assertNotIn("list_agents", disabled)
+        self.assertNotIn("get_agent_status", disabled)
+
+    def test_policy_is_rendered_only_on_the_peer_provider(self):
+        spec = load_spec()
+        rendered = room.render_providers(spec, TEST_HOME)
+        self.assertEqual(
+            rendered["opencode-peer"]["paseoTools"], self.peer_entry(spec)["paseoTools"]
+        )
+        for provider_id in ("opencode-supervisor", "opencode-lead"):
+            self.assertNotIn("paseoTools", rendered[provider_id])
+
+    def test_policy_is_detached_from_the_spec(self):
+        spec = load_spec()
+        rendered = room.render_providers(spec, TEST_HOME)
+        rendered["opencode-peer"]["paseoTools"]["disabledTools"].append("list_agents")
+        self.assertNotIn("list_agents", self.peer_entry(load_spec())["paseoTools"]["disabledTools"])
+
+    def test_validate_rejects_unknown_policy_fields(self):
+        spec = load_spec()
+        self.peer_entry(spec)["paseoTools"] = {"nope": True}
+        problems = room.validate_spec(spec)
+        self.assertTrue(any("paseoTools" in problem for problem in problems), problems)
+
+    def test_validate_rejects_a_non_list_disabled_tools(self):
+        spec = load_spec()
+        self.peer_entry(spec)["paseoTools"] = {"disabledTools": "create_agent"}
+        problems = room.validate_spec(spec)
+        self.assertTrue(any("disabledTools" in problem for problem in problems), problems)
+
+    def test_removing_the_policy_from_the_spec_drops_it_on_sync(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        room.merge_providers(config, spec, TEST_HOME)
+        self.peer_entry(spec).pop("paseoTools")
+        self.assertTrue(room.merge_providers(config, spec, TEST_HOME))
+        self.assertNotIn("paseoTools", config["agents"]["providers"]["opencode-peer"])
 
 
 class SeatRoleContractTest(unittest.TestCase):
@@ -292,8 +360,8 @@ class ProviderMergeTest(unittest.TestCase):
         changed = room.merge_provider(config, spec)
         self.assertTrue(changed)
         entry = config["agents"]["providers"][spec["providerId"]]
-        self.assertIs(entry["enabled"], True)
-        self.assertEqual(entry["command"], {"mode": "replace", "argv": ["X:\\tools\\opencode.exe"]})
+        self.assertNotIn("enabled", entry)
+        self.assertEqual(entry["command"], ["X:\\tools\\opencode.exe"])
 
     def test_repairs_managed_keys_and_preserves_others(self):
         spec = load_spec()
@@ -305,8 +373,8 @@ class ProviderMergeTest(unittest.TestCase):
         changed = room.merge_provider(config, spec)
         self.assertTrue(changed)
         entry = config["agents"]["providers"][spec["providerId"]]
-        self.assertIs(entry["enabled"], True)
-        self.assertEqual(entry["command"], {"mode": "replace", "argv": ["X:\\tools\\opencode.exe"]})
+        self.assertNotIn("enabled", entry)
+        self.assertEqual(entry["command"], ["X:\\tools\\opencode.exe"])
         self.assertEqual(entry["env"], {"X": "1"})
 
     def test_is_idempotent(self):
@@ -319,6 +387,25 @@ class ProviderMergeTest(unittest.TestCase):
         self.assertEqual(
             json.dumps(config["agents"]["providers"][spec["providerId"]], sort_keys=True), before
         )
+
+    def test_normalizes_the_legacy_command_object(self):
+        spec = load_spec()
+        config = minimal_config(provider=True)
+        config["agents"]["providers"][spec["providerId"]] = {
+            "command": {"mode": "replace", "argv": ["X:\\tools\\opencode.exe"]},
+        }
+        self.assertTrue(room.merge_provider(config, spec))
+        entry = config["agents"]["providers"][spec["providerId"]]
+        self.assertEqual(entry["command"], ["X:\\tools\\opencode.exe"])
+
+    def test_command_argv_accepts_both_paseo_shapes(self):
+        self.assertEqual(room.provider_command_argv(["C:\\opencode.exe"]), ["C:\\opencode.exe"])
+        self.assertEqual(
+            room.provider_command_argv({"mode": "replace", "argv": ["C:\\opencode.exe"]}),
+            ["C:\\opencode.exe"],
+        )
+        self.assertIsNone(room.provider_command_argv({"mode": "append", "args": ["--x"]}))
+        self.assertIsNone(room.provider_command_argv([]))
 
 
 class DerivedProviderMergeTest(unittest.TestCase):
@@ -341,7 +428,7 @@ class DerivedProviderMergeTest(unittest.TestCase):
             "label": "stale",
             "enabled": False,
             "env": {"X": "1"},
-            "paseoTools": {"enabled": False},
+            "order": 5,
         }
         changed = room.merge_providers(config, spec, TEST_HOME)
         self.assertTrue(changed)
@@ -349,7 +436,7 @@ class DerivedProviderMergeTest(unittest.TestCase):
         self.assertEqual(entry["label"], spec["providers"][0]["label"])
         self.assertEqual(entry["extends"], spec["providerId"])
         self.assertEqual(entry["env"], room.render_providers(spec, TEST_HOME)[target]["env"])
-        self.assertEqual(entry["paseoTools"], {"enabled": False})
+        self.assertEqual(entry["order"], 5)
         self.assertIs(entry["enabled"], False)
 
     def test_keeping_native_agents_drops_only_the_child_agent_policy(self):
@@ -560,6 +647,27 @@ class SyncFlowTest(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn(target, problems[0])
         self.assertIn("models", problems[0])
+
+    def test_verify_accepts_paseo_normalized_provider_shape(self):
+        spec, desired = self.sync()
+        config = room.read_config(self.home)
+        entry = config["agents"]["providers"][spec["providerId"]]
+        exe = entry["command"][0]
+        # What Paseo's own config writer leaves behind: argv array plus the
+        # default `enabled` dropped, or the older replace object.
+        entry["command"] = {"mode": "replace", "argv": [exe]}
+        entry["enabled"] = True
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        self.assertEqual(room.verify_installed(self.home, spec, desired), [])
+
+    def test_verify_reports_a_disabled_base_provider(self):
+        spec, desired = self.sync()
+        config = room.read_config(self.home)
+        config["agents"]["providers"][spec["providerId"]]["enabled"] = False
+        room.write_config_atomic(self.paseo_home / "config.json", config)
+        problems = room.verify_installed(self.home, spec, desired)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("enabled", problems[0])
 
     def test_verify_reports_a_seat_that_regained_native_agents(self):
         spec, desired = self.sync()

@@ -5,7 +5,7 @@
 ```text
 ~/.paseo/config.json                     (owned by the operator's Paseo install)
   agents.providers[]                     (managed by scripts/room.py sync)
-    "opencode"            enabled + command override -> real opencode.exe
+    "opencode"            command argv -> real opencode.exe (Paseo's default enabled)
     "opencode-supervisor"  extends opencode / deepseek-v4.1-flash:1017 (default) / thinking low  (default)
     "opencode-lead"        extends opencode / deepseek-v4-pro     (default) / thinking max  (default)
     "opencode-peer"        extends opencode / deepseek-v4.1-flash:1017 (default) / thinking low  (default)
@@ -135,10 +135,19 @@ server (the same overlay that names the directory holding the seat's prompt):
 OpenCode layers `OPENCODE_CONFIG_CONTENT` over the config documents it discovers,
 so the seat's permissions gain a deny that no approval can override, and the
 built-in child agents leave the seat's catalog. With no launchable child agent,
-the seat has no child-agent tool at all. The operator's own
-`~/.config/opencode/opencode.jsonc` is never rewritten, and the base `opencode`
-provider entry carries no overlay — native subagents stay available everywhere
-except in the three seats.
+the seat has no OpenCode-native child-agent tool.
+
+Paseo's own bridge is a second surface: every seat still receives
+`create_agent`, `send_agent_prompt`, `list_agents`, and the rest of Paseo's MCP
+catalog, because the Lead must dispatch Peers through it. Each derived provider
+may therefore carry a `paseoTools` policy. The Peer uses
+`disabledTools` to remove agent creation and lifecycle control
+(`create_agent`, `kill_agent`, `create_workspace`, schedule creation, permission
+approval), leaving read-only inspection plus `send_agent_prompt` for its report
+to Lead. Paseo applies the policy per provider ID and a running session keeps
+the catalog it launched with, so a policy change needs a new agent. The base
+`opencode` provider entry carries no overlay and no policy — native subagents and
+the full Paseo catalog stay available everywhere except in the seats.
 
 `config/room.json`'s `nativeAgents` flag is the switch for that half: `false`
 (the shipped value) renders the policy into every derived provider, `true`
@@ -174,19 +183,23 @@ upserts them into `daemon.agentProfiles` **by name**:
   deleting it from the spec really deletes it.
 - Profiles with other names (including the Amp room's) are never touched or
   reordered.
-- The `opencode` provider is built into Paseo; this room manages two keys of
-  its entry: `enabled: true` and a `command` override
-  `{"mode": "replace", "argv": [<real opencode.exe>]}`. The exe path is
+- The `opencode` provider is built into Paseo; this room manages its launch:
+  a `command` argv array, `["<real opencode.exe>"]`, and repair of a stale
+  `enabled: false` (true is Paseo's default, so sync does not write it). The exe
+  path is
   resolved at sync time by parsing the npm shim (`shutil.which` finds
   `opencode.CMD`, which the daemon's Node cannot spawn without a shell;
   without the override Paseo falls back to its legacy v1 integration and
-  every request returns the web UI's HTML page). Other keys in the entry are
+  every request returns the web UI's HTML page). Paseo still accepts the older
+  `{"mode": "replace", "argv": [...]}` object this repository used to write, and
+  `verify` treats either shape as the same launch. Other keys in the entry are
   preserved.
 - The derived role providers are upserted by id the same way. Every key this
-  repository renders (`extends`, `label`, `description`, `models`, `env`) is
-  room-owned, so a key the spec no longer carries is removed — for example the
-  native-agent policy when `nativeAgents` is `true`; unrelated keys an operator
-  added by hand (`enabled`, `order`, `paseoTools`) survive. A derived provider id
+  repository renders (`extends`, `label`, `description`, `models`, `env`,
+  `paseoTools`) is room-owned, so a key the spec no longer carries is removed —
+  for example the native-agent policy when `nativeAgents` is `true`, or the
+  Peer's `paseoTools` policy when the spec drops it; unrelated keys an operator
+  added by hand (`enabled`, `order`) survive. A derived provider id
   must match Paseo's `^[a-z][a-z0-9-]*$` and must not be one of Paseo's built-in
   ids — `verify --source` and `sync` both refuse a spec that breaks either rule,
   that binds a profile to a provider the spec never declares, that binds one seat
